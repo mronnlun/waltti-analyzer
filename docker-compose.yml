@@ -1,0 +1,13 @@
+services:
+  web:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      - DIGITRANSIT_API_KEY=${DIGITRANSIT_API_KEY}
+      - TARGET_STOP_ID=${TARGET_STOP_ID:-Vaasa:309392}
+    volumes:
+      - waltti-data:/app/data
+
+volumes:
+  waltti-data:

@@ -1,0 +1,23 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "appName": {
+      "value": "waltti-analyzer"
+    },
+    "skuName": {
+      "value": "B1"
+    },
+    "targetStopId": {
+      "value": "Vaasa:309392"
+    },
+    "digitransitApiKey": {
+      "reference": {
+        "keyVault": {
+          "id": "/subscriptions/<SUBSCRIPTION_ID>/resourceGroups/<RG_NAME>/providers/Microsoft.KeyVault/vaults/<VAULT_NAME>"
+        },
+        "secretName": "digitransit-api-key"
+      }
+    }
+  }
+}
