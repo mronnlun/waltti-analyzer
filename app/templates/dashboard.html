@@ -1,0 +1,213 @@
+{% extends "base.html" %}
+{% from "macros.html" import format_delay %}
+
+{% block title %}Dashboard — Waltti Analyzer{% endblock %}
+
+{% block content %}
+<h1>Bus Stop Timeliness Dashboard</h1>
+<p class="subtitle">Stop: {{ stop_id }}</p>
+
+<!-- Controls -->
+<section class="controls">
+    <form method="get" action="/" class="date-form">
+        <label>From: <input type="date" name="from" value="{{ from_date }}"></label>
+        <label>To: <input type="date" name="to" value="{{ to_date }}"></label>
+        <label>Route: <input type="text" name="route" value="{{ route_filter or '' }}" placeholder="all"></label>
+        <button type="submit">Analyze</button>
+    </form>
+    <div class="actions">
+        <button onclick="collectDaily()">Collect Today</button>
+        <button onclick="pollRealtime()">Poll Realtime</button>
+        <span id="action-status"></span>
+    </div>
+</section>
+
+{% if summary and summary.total_departures > 0 %}
+<!-- Summary Cards -->
+<section class="cards">
+    <div class="card">
+        <div class="card-value">{{ summary.total_departures }}</div>
+        <div class="card-label">Total Departures</div>
+    </div>
+    <div class="card">
+        <div class="card-value">{{ summary.on_time_pct }}%</div>
+        <div class="card-label">On Time (≤3min)</div>
+    </div>
+    <div class="card">
+        <div class="card-value">{{ format_delay(summary.avg_delay_seconds) }}</div>
+        <div class="card-label">Avg Delay</div>
+    </div>
+    <div class="card">
+        <div class="card-value">{{ summary.with_realtime_pct }}%</div>
+        <div class="card-label">Realtime Coverage</div>
+    </div>
+</section>
+
+<!-- Timeliness Breakdown -->
+<section class="stats-section">
+    <h2>Timeliness Breakdown</h2>
+    <p>Based on {{ summary.with_realtime }} departures with realtime data</p>
+    <table>
+        <tr><td>On time (≤3 min)</td><td>{{ summary.on_time }} ({{ summary.on_time_pct }}%)</td></tr>
+        <tr><td>Slightly late (3–10 min)</td><td>{{ summary.slightly_late }}</td></tr>
+        <tr><td>Very late (>10 min)</td><td>{{ summary.very_late }}</td></tr>
+        <tr><td>Early (<0)</td><td>{{ summary.early }}</td></tr>
+        <tr><td>Canceled</td><td>{{ summary.canceled }}</td></tr>
+    </table>
+    <p>Median delay: {{ format_delay(summary.median_delay_seconds) }} ·
+       Max delay: {{ format_delay(summary.max_delay_seconds) }}</p>
+
+    {% if summary.with_realtime_pct < 70 %}
+    <div class="warning">
+        ⚠ Only {{ summary.with_realtime_pct }}% of observations have realtime data.
+        The scheduler must be running during service hours to capture delay data.
+    </div>
+    {% endif %}
+</section>
+
+<!-- Per-Route Breakdown -->
+{% if routes_breakdown %}
+<section class="stats-section">
+    <h2>Per-Route Breakdown</h2>
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Route</th>
+                <th>Departures</th>
+                <th>Realtime</th>
+                <th>On-time %</th>
+                <th>Avg Delay</th>
+                <th>Max Delay</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for r in routes_breakdown %}
+            <tr>
+                <td>{{ r.route }}</td>
+                <td>{{ r.departures }}</td>
+                <td>{{ r.with_realtime }}</td>
+                <td>{{ r.on_time_pct }}%</td>
+                <td>{{ format_delay(r.avg_delay_seconds) }}</td>
+                <td>{{ format_delay(r.max_delay_seconds) }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</section>
+{% endif %}
+
+<!-- Delay by Hour Chart -->
+{% if hourly_delays %}
+<section class="stats-section">
+    <h2>Delay by Hour of Day</h2>
+    <div class="chart-container">
+        <canvas id="hourlyChart"></canvas>
+    </div>
+</section>
+{% endif %}
+
+{% elif summary %}
+<section class="stats-section">
+    <p>{{ summary.message }}</p>
+</section>
+{% else %}
+<section class="stats-section">
+    <p>Select a date range and click <strong>Analyze</strong> to see timeliness data.</p>
+    <p>Use <strong>Collect Today</strong> to fetch today's schedule, or <strong>Poll Realtime</strong> to capture current delay data.</p>
+</section>
+{% endif %}
+
+<!-- Recent Observations -->
+<section class="stats-section">
+    <h2>Recent Observations</h2>
+    {% if recent %}
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Date</th>
+                <th>Route</th>
+                <th>Headsign</th>
+                <th>Scheduled</th>
+                <th>Delay</th>
+                <th>Realtime</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for obs in recent %}
+            <tr>
+                <td>{{ obs.service_date }}</td>
+                <td>{{ obs.route_short_name }}</td>
+                <td>{{ obs.headsign }}</td>
+                <td>{{ "%02d:%02d"|format(obs.scheduled_departure // 3600, (obs.scheduled_departure % 3600) // 60) }}</td>
+                <td>{{ format_delay(obs.departure_delay) }}</td>
+                <td>{{ "✓" if obs.realtime else "—" }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <p>No observations yet. Click <strong>Collect Today</strong> to start.</p>
+    {% endif %}
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script>
+async function collectDaily() {
+    const status = document.getElementById('action-status');
+    status.textContent = 'Collecting...';
+    try {
+        const resp = await fetch('/api/collect/daily', {method: 'POST'});
+        const data = await resp.json();
+        status.textContent = data.status === 'ok'
+            ? `Collected ${data.departures} departures`
+            : data.message || data.status;
+        if (data.status === 'ok') setTimeout(() => location.reload(), 1000);
+    } catch (e) {
+        status.textContent = 'Error: ' + e.message;
+    }
+}
+
+async function pollRealtime() {
+    const status = document.getElementById('action-status');
+    status.textContent = 'Polling...';
+    try {
+        const resp = await fetch('/api/collect/realtime', {method: 'POST'});
+        const data = await resp.json();
+        status.textContent = data.status === 'ok'
+            ? `Updated ${data.updated} departures (${data.with_realtime} realtime)`
+            : data.message || data.status;
+        if (data.status === 'ok') setTimeout(() => location.reload(), 1000);
+    } catch (e) {
+        status.textContent = 'Error: ' + e.message;
+    }
+}
+
+{% if hourly_delays %}
+const ctx = document.getElementById('hourlyChart').getContext('2d');
+new Chart(ctx, {
+    type: 'bar',
+    data: {
+        labels: {{ hourly_delays | map(attribute='hour') | list | tojson }},
+        datasets: [{
+            label: 'Avg Delay (seconds)',
+            data: {{ hourly_delays | map(attribute='avg_delay_seconds') | list | tojson }},
+            backgroundColor: {{ hourly_delays | map(attribute='avg_delay_seconds') | list | tojson }}.map(
+                v => v > 180 ? '#e74c3c' : v > 60 ? '#f39c12' : '#27ae60'
+            ),
+        }]
+    },
+    options: {
+        responsive: true,
+        scales: {
+            x: { title: { display: true, text: 'Hour of Day' } },
+            y: { title: { display: true, text: 'Average Delay (seconds)' }, beginAtZero: true }
+        },
+        plugins: {
+            legend: { display: false }
+        }
+    }
+});
+{% endif %}
+</script>
+{% endblock %}

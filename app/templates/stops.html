@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+
+{% block title %}Stop Discovery — Waltti Analyzer{% endblock %}
+
+{% block content %}
+<h1>Stop Discovery</h1>
+<p>Current target stop: <strong>{{ stop_id }}</strong></p>
+
+<section class="controls">
+    <form id="search-form">
+        <label>Search by name: <input type="text" id="stop-name" placeholder="e.g. Gerbynmäentie"></label>
+        <button type="submit">Search</button>
+    </form>
+</section>
+
+<section class="stats-section">
+    <div id="results"></div>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.getElementById('search-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const name = document.getElementById('stop-name').value;
+    if (!name) return;
+
+    const resultsDiv = document.getElementById('results');
+    resultsDiv.innerHTML = 'Searching...';
+
+    try {
+        const resp = await fetch('/api/collect/daily', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+        });
+        // For now, show info about using the API directly
+        resultsDiv.innerHTML = `
+            <p>Stop search is done via the Digitransit API. Use the GraphQL query:</p>
+            <pre>{ stops(name: "${name}") { gtfsId name code lat lon } }</pre>
+            <p>Or configure <code>TARGET_STOP_ID</code> in your <code>.env</code> file.</p>
+        `;
+    } catch (e) {
+        resultsDiv.innerHTML = 'Error: ' + e.message;
+    }
+});
+</script>
+{% endblock %}
