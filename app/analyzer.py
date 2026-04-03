@@ -2,8 +2,9 @@ import sqlite3
 from statistics import mean, median
 
 
-def get_summary(db: sqlite3.Connection, stop_id: str, start_date: str,
-                end_date: str, route: str | None = None) -> dict:
+def get_summary(
+    db: sqlite3.Connection, stop_id: str, start_date: str, end_date: str, route: str | None = None
+) -> dict:
     """Compute summary statistics for a date range."""
     query = """SELECT * FROM observations
                WHERE stop_gtfs_id = ? AND service_date >= ? AND service_date <= ?"""
@@ -29,9 +30,9 @@ def get_summary(db: sqlite3.Connection, stop_id: str, start_date: str,
     # Delay stats based only on realtime observations
     delays = [r["departure_delay"] for r in with_realtime if r["departure_delay"] is not None]
 
-    on_time = [d for d in delays if d <= 180]       # <= 3 min
+    on_time = [d for d in delays if d <= 180]  # <= 3 min
     slightly_late = [d for d in delays if 180 < d <= 600]  # 3-10 min
-    very_late = [d for d in delays if d > 600]       # > 10 min
+    very_late = [d for d in delays if d > 600]  # > 10 min
     early = [d for d in delays if d < 0]
 
     service_dates = sorted(set(r["service_date"] for r in rows))
@@ -56,8 +57,9 @@ def get_summary(db: sqlite3.Connection, stop_id: str, start_date: str,
     }
 
 
-def get_route_breakdown(db: sqlite3.Connection, stop_id: str,
-                        start_date: str, end_date: str) -> list[dict]:
+def get_route_breakdown(
+    db: sqlite3.Connection, stop_id: str, start_date: str, end_date: str
+) -> list[dict]:
     """Per-route statistics."""
     rows = db.execute(
         """SELECT route_short_name, COUNT(*) as total,
@@ -87,20 +89,23 @@ def get_route_breakdown(db: sqlite3.Connection, stop_id: str,
         else:
             on_time_pct = 0
 
-        result.append({
-            "route": r["route_short_name"],
-            "departures": r["total"],
-            "with_realtime": rt_count,
-            "on_time_pct": on_time_pct,
-            "avg_delay_seconds": round(r["avg_delay"] or 0, 1),
-            "max_delay_seconds": r["max_delay"] or 0,
-        })
+        result.append(
+            {
+                "route": r["route_short_name"],
+                "departures": r["total"],
+                "with_realtime": rt_count,
+                "on_time_pct": on_time_pct,
+                "avg_delay_seconds": round(r["avg_delay"] or 0, 1),
+                "max_delay_seconds": r["max_delay"] or 0,
+            }
+        )
 
     return result
 
 
-def get_delay_by_hour(db: sqlite3.Connection, stop_id: str, start_date: str,
-                      end_date: str, route: str | None = None) -> list[dict]:
+def get_delay_by_hour(
+    db: sqlite3.Connection, stop_id: str, start_date: str, end_date: str, route: str | None = None
+) -> list[dict]:
     """Average delay by hour of day (based on scheduled departure)."""
     query = """SELECT
                  (scheduled_departure / 3600) as hour,

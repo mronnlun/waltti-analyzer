@@ -88,8 +88,14 @@ def connect_direct(db_path: str) -> sqlite3.Connection:
 # --- Stop operations ---
 
 
-def upsert_stop(db: sqlite3.Connection, gtfs_id: str, name: str, code: str | None,
-                lat: float | None, lon: float | None):
+def upsert_stop(
+    db: sqlite3.Connection,
+    gtfs_id: str,
+    name: str,
+    code: str | None,
+    lat: float | None,
+    lon: float | None,
+):
     db.execute(
         "INSERT OR REPLACE INTO stops (gtfs_id, name, code, lat, lon, updated_at) "
         "VALUES (?, ?, ?, ?, ?, ?)",
@@ -139,8 +145,9 @@ def upsert_observations_batch(db: sqlite3.Connection, observations: list[dict]):
     db.commit()
 
 
-def get_observations(db: sqlite3.Connection, stop_id: str, start_date: str,
-                     end_date: str, route: str | None = None) -> list[sqlite3.Row]:
+def get_observations(
+    db: sqlite3.Connection, stop_id: str, start_date: str, end_date: str, route: str | None = None
+) -> list[sqlite3.Row]:
     query = """SELECT * FROM observations
                WHERE stop_gtfs_id = ? AND service_date >= ? AND service_date <= ?"""
     params: list = [stop_id, start_date, end_date]
@@ -151,8 +158,9 @@ def get_observations(db: sqlite3.Connection, stop_id: str, start_date: str,
     return db.execute(query, params).fetchall()
 
 
-def get_recent_observations(db: sqlite3.Connection, stop_id: str,
-                            limit: int = 20) -> list[sqlite3.Row]:
+def get_recent_observations(
+    db: sqlite3.Connection, stop_id: str, limit: int = 20
+) -> list[sqlite3.Row]:
     return db.execute(
         """SELECT * FROM observations
            WHERE stop_gtfs_id = ?
@@ -165,21 +173,35 @@ def get_recent_observations(db: sqlite3.Connection, stop_id: str,
 # --- Collection log operations ---
 
 
-def log_collection(db: sqlite3.Connection, stop_gtfs_id: str, query_type: str,
-                   service_date: str | None = None, departures_found: int = 0,
-                   no_service: int = 0, error: str | None = None):
+def log_collection(
+    db: sqlite3.Connection,
+    stop_gtfs_id: str,
+    query_type: str,
+    service_date: str | None = None,
+    departures_found: int = 0,
+    no_service: int = 0,
+    error: str | None = None,
+):
     db.execute(
         """INSERT INTO collection_log
         (queried_at, stop_gtfs_id, query_type, service_date, departures_found, no_service, error)
         VALUES (?, ?, ?, ?, ?, ?, ?)""",
-        (int(time.time()), stop_gtfs_id, query_type, service_date, departures_found,
-         no_service, error),
+        (
+            int(time.time()),
+            stop_gtfs_id,
+            query_type,
+            service_date,
+            departures_found,
+            no_service,
+            error,
+        ),
     )
     db.commit()
 
 
-def get_latest_collection(db: sqlite3.Connection, stop_id: str,
-                          query_type: str) -> sqlite3.Row | None:
+def get_latest_collection(
+    db: sqlite3.Connection, stop_id: str, query_type: str
+) -> sqlite3.Row | None:
     return db.execute(
         """SELECT * FROM collection_log
            WHERE stop_gtfs_id = ? AND query_type = ?
@@ -188,8 +210,7 @@ def get_latest_collection(db: sqlite3.Connection, stop_id: str,
     ).fetchone()
 
 
-def get_collection_log(db: sqlite3.Connection, stop_id: str,
-                       limit: int = 50) -> list[sqlite3.Row]:
+def get_collection_log(db: sqlite3.Connection, stop_id: str, limit: int = 50) -> list[sqlite3.Row]:
     return db.execute(
         "SELECT * FROM collection_log WHERE stop_gtfs_id = ? ORDER BY queried_at DESC LIMIT ?",
         (stop_id, limit),

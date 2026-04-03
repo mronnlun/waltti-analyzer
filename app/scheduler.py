@@ -59,8 +59,12 @@ def init_scheduler(app):
     )
 
     _scheduler.start()
-    logger.info("Scheduler started: daily at 03:00, realtime every %ds (%d:00–%d:00)",
-                interval, start_hour, end_hour)
+    logger.info(
+        "Scheduler started: daily at 03:00, realtime every %ds (%d:00–%d:00)",
+        interval,
+        start_hour,
+        end_hour,
+    )
 
 
 def get_scheduler_status() -> dict:
@@ -68,8 +72,10 @@ def get_scheduler_status() -> dict:
         return {"running": False}
     jobs = []
     for job in _scheduler.get_jobs():
-        jobs.append({
-            "id": job.id,
-            "next_run": str(job.next_run_time) if job.next_run_time else None,
-        })
+        jobs.append(
+            {
+                "id": job.id,
+                "next_run": str(job.next_run_time) if job.next_run_time else None,
+            }
+        )
     return {"running": _scheduler.running, "jobs": jobs}

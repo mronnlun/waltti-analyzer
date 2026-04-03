@@ -1,7 +1,7 @@
-from flask import Blueprint, render_template, request, current_app
+from flask import Blueprint, current_app, render_template, request
 
+from app.analyzer import get_delay_by_hour, get_route_breakdown, get_summary
 from app.db import get_db, get_recent_observations
-from app.analyzer import get_summary, get_route_breakdown, get_delay_by_hour
 
 dashboard_bp = Blueprint("dashboard", __name__)
 

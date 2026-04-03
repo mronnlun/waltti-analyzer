@@ -99,10 +99,12 @@ class DigitransitClient:
         self.api_url = api_url
         self.api_key = api_key
         self.session = requests.Session()
-        self.session.headers.update({
-            "Content-Type": "application/json",
-            "digitransit-subscription-key": api_key,
-        })
+        self.session.headers.update(
+            {
+                "Content-Type": "application/json",
+                "digitransit-subscription-key": api_key,
+            }
+        )
 
     def _query(self, graphql: str, retries: int = 1) -> dict:
         for attempt in range(retries + 1):
@@ -124,8 +126,7 @@ class DigitransitClient:
                 else:
                     raise
 
-    def fetch_daily_schedule(self, stop_id: str,
-                            service_date: date | None = None) -> dict | None:
+    def fetch_daily_schedule(self, stop_id: str, service_date: date | None = None) -> dict | None:
         if service_date is None:
             service_date = datetime.now(HELSINKI_TZ).date()
         date_str = service_date.isoformat()
@@ -141,11 +142,7 @@ class DigitransitClient:
         data = self._query(QUERY_STOPS_BY_NAME % name)
         return data.get("stops", [])
 
-    def search_stops_by_radius(self, lat: float, lon: float,
-                               radius: int = 500) -> list[dict]:
+    def search_stops_by_radius(self, lat: float, lon: float, radius: int = 500) -> list[dict]:
         data = self._query(QUERY_STOPS_BY_RADIUS % (lat, lon, radius))
         edges = data.get("stopsByRadius", {}).get("edges", [])
-        return [
-            {**edge["node"]["stop"], "distance": edge["node"]["distance"]}
-            for edge in edges
-        ]
+        return [{**edge["node"]["stop"], "distance": edge["node"]["distance"]} for edge in edges]

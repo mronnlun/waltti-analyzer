@@ -1,14 +1,14 @@
 import time
 
 from app.db import (
-    get_stop,
-    upsert_stop,
-    upsert_observation,
-    upsert_observations_batch,
+    get_latest_collection,
     get_observations,
     get_recent_observations,
+    get_stop,
     log_collection,
-    get_latest_collection,
+    upsert_observation,
+    upsert_observations_batch,
+    upsert_stop,
 )
 
 

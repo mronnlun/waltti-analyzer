@@ -1,4 +1,4 @@
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
 from app.digitransit import DigitransitClient
 
@@ -47,6 +47,7 @@ def test_fetch_daily_schedule():
 
     with patch.object(client.session, "post", return_value=_mock_response(mock_data)):
         from datetime import date
+
         result = client.fetch_daily_schedule("Vaasa:309392", date(2026, 4, 2))
 
     assert result is not None
@@ -99,8 +100,13 @@ def test_search_stops_by_name():
 
     mock_data = {
         "stops": [
-            {"gtfsId": "Vaasa:309392", "name": "Gerbynmäentie", "code": None,
-             "lat": 63.14, "lon": 21.57}
+            {
+                "gtfsId": "Vaasa:309392",
+                "name": "Gerbynmäentie",
+                "code": None,
+                "lat": 63.14,
+                "lon": 21.57,
+            }
         ]
     }
 

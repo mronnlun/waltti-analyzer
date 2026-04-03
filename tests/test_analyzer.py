@@ -1,7 +1,7 @@
 import time
 
+from app.analyzer import format_delay, get_delay_by_hour, get_route_breakdown, get_summary
 from app.db import upsert_observations_batch
-from app.analyzer import get_summary, get_route_breakdown, get_delay_by_hour, format_delay
 
 
 def _make_obs(trip_id, route, scheduled_dep, delay, realtime=True, date="2026-04-02"):
@@ -34,11 +34,11 @@ def test_summary_empty(db):
 
 def test_summary_with_data(db):
     observations = [
-        _make_obs("trip1", "3", 24000, 30),        # on time (30s)
-        _make_obs("trip2", "3", 25800, 120),        # on time (2min)
-        _make_obs("trip3", "3", 27600, 300),        # slightly late (5min)
-        _make_obs("trip4", "9", 29400, 0),          # on time
-        _make_obs("trip5", "3", 31200, 0, False),   # static only
+        _make_obs("trip1", "3", 24000, 30),  # on time (30s)
+        _make_obs("trip2", "3", 25800, 120),  # on time (2min)
+        _make_obs("trip3", "3", 27600, 300),  # slightly late (5min)
+        _make_obs("trip4", "9", 29400, 0),  # on time
+        _make_obs("trip5", "3", 31200, 0, False),  # static only
     ]
     upsert_observations_batch(db, observations)
 
@@ -83,9 +83,9 @@ def test_route_breakdown(db):
 
 def test_delay_by_hour(db):
     observations = [
-        _make_obs("trip1", "3", 6 * 3600 + 400, 60),    # hour 6
-        _make_obs("trip2", "3", 6 * 3600 + 1800, 120),   # hour 6
-        _make_obs("trip3", "3", 8 * 3600 + 100, 300),    # hour 8
+        _make_obs("trip1", "3", 6 * 3600 + 400, 60),  # hour 6
+        _make_obs("trip2", "3", 6 * 3600 + 1800, 120),  # hour 6
+        _make_obs("trip3", "3", 8 * 3600 + 100, 300),  # hour 8
     ]
     upsert_observations_batch(db, observations)
 

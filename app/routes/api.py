@@ -1,8 +1,8 @@
-from flask import Blueprint, jsonify, request, current_app
+from flask import Blueprint, current_app, jsonify, request
 
-from app.db import get_db, get_observations, get_latest_collection
 from app.analyzer import get_summary
 from app.collector import collect_daily, poll_realtime_once
+from app.db import get_db, get_latest_collection, get_observations
 
 api_bp = Blueprint("api", __name__)
 
@@ -39,11 +39,13 @@ def status():
     daily = get_latest_collection(db, stop_id, "daily")
     realtime = get_latest_collection(db, stop_id, "realtime")
 
-    return jsonify({
-        "stop_id": stop_id,
-        "last_daily": dict(daily) if daily else None,
-        "last_realtime": dict(realtime) if realtime else None,
-    })
+    return jsonify(
+        {
+            "stop_id": stop_id,
+            "last_daily": dict(daily) if daily else None,
+            "last_realtime": dict(realtime) if realtime else None,
+        }
+    )
 
 
 @api_bp.route("/observations")
