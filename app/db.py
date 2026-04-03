@@ -69,9 +69,13 @@ def init_db(app):
 
 
 def _connect(db_path: str) -> sqlite3.Connection:
-    conn = sqlite3.connect(db_path)
+    if db_path == ":memory:" or db_path.startswith("file:"):
+        conn = sqlite3.connect(db_path, uri=db_path.startswith("file:"))
+    else:
+        conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA journal_mode=WAL")
+    if not db_path.startswith("file:") and db_path != ":memory:":
+        conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA foreign_keys=ON")
     return conn
 

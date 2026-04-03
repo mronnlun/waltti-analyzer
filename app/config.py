@@ -22,5 +22,5 @@ class Config:
 
 class TestConfig(Config):
     TESTING = True
-    DATABASE_PATH = ":memory:"
+    DATABASE_PATH = ""  # Set dynamically in conftest
     DIGITRANSIT_API_KEY = "test-key"
