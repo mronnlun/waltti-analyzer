@@ -10,6 +10,7 @@ from app.db import (
     upsert_observations_batch,
     upsert_stop,
     upsert_stops_batch,
+    upsert_trips_batch,
 )
 from app.digitransit import DigitransitClient
 
@@ -78,7 +79,8 @@ def collect_daily_single(
     if all_empty:
         return 0
 
-    # Build observation rows
+    # Build trip and observation rows
+    trips = {}
     observations = []
     for pattern_data in patterns:
         route = pattern_data["pattern"]["route"]
@@ -86,17 +88,19 @@ def collect_daily_single(
 
         for st in pattern_data.get("stoptimes", []):
             trip_id = st["trip"]["gtfsId"]
+            trips[trip_id] = {
+                "gtfs_id": trip_id,
+                "route_short_name": route.get("shortName"),
+                "route_long_name": route.get("longName"),
+                "mode": route.get("mode"),
+                "headsign": st.get("headsign"),
+                "direction_id": direction_id,
+            }
             observations.append(
                 {
                     "stop_gtfs_id": stop_id,
                     "trip_gtfs_id": trip_id,
-                    "route_short_name": route.get("shortName"),
-                    "route_long_name": route.get("longName"),
-                    "mode": route.get("mode"),
-                    "headsign": st.get("headsign"),
-                    "direction_id": direction_id,
                     "service_date": target_date,
-                    "service_day_unix": None,
                     "scheduled_arrival": st.get("scheduledArrival"),
                     "scheduled_departure": st["scheduledDeparture"],
                     "realtime_arrival": st.get("realtimeArrival"),
@@ -109,6 +113,8 @@ def collect_daily_single(
                 }
             )
 
+    if trips:
+        upsert_trips_batch(db, list(trips.values()))
     if observations:
         upsert_observations_batch(db, observations)
     return len(observations)
@@ -199,6 +205,7 @@ def poll_realtime_single(client: DigitransitClient, db, stop_id: str, now: int) 
     if not stoptimes:
         return 0
 
+    trips = {}
     observations = []
     for st in stoptimes:
         trip = st["trip"]
@@ -210,17 +217,19 @@ def poll_realtime_single(client: DigitransitClient, db, stop_id: str, now: int) 
         if service_date is None:
             continue
 
+        trips[trip_id] = {
+            "gtfs_id": trip_id,
+            "route_short_name": route.get("shortName"),
+            "route_long_name": route.get("longName"),
+            "mode": None,
+            "headsign": st.get("headsign"),
+            "direction_id": None,
+        }
         observations.append(
             {
                 "stop_gtfs_id": stop_id,
                 "trip_gtfs_id": trip_id,
-                "route_short_name": route.get("shortName"),
-                "route_long_name": route.get("longName"),
-                "mode": None,
-                "headsign": st.get("headsign"),
-                "direction_id": None,
                 "service_date": service_date,
-                "service_day_unix": service_day,
                 "scheduled_arrival": st.get("scheduledArrival"),
                 "scheduled_departure": st["scheduledDeparture"],
                 "realtime_arrival": st.get("realtimeArrival"),
@@ -233,6 +242,8 @@ def poll_realtime_single(client: DigitransitClient, db, stop_id: str, now: int) 
             }
         )
 
+    if trips:
+        upsert_trips_batch(db, list(trips.values()))
     if observations:
         upsert_observations_batch(db, observations)
     return len(observations)

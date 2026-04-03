@@ -1,5 +1,4 @@
 import os
-import secrets
 
 from dotenv import load_dotenv
 
@@ -7,7 +6,6 @@ load_dotenv()
 
 
 class Config:
-    SECRET_KEY = os.environ.get("SECRET_KEY", secrets.token_hex(32))
     DIGITRANSIT_API_KEY = os.environ.get("DIGITRANSIT_API_KEY", "")
     DIGITRANSIT_API_URL = os.environ.get(
         "DIGITRANSIT_API_URL",

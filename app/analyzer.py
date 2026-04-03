@@ -6,11 +6,12 @@ def get_summary(
     db: sqlite3.Connection, stop_id: str, start_date: str, end_date: str, route: str | None = None
 ) -> dict:
     """Compute summary statistics for a date range."""
-    query = """SELECT * FROM observations
-               WHERE stop_gtfs_id = ? AND service_date >= ? AND service_date <= ?"""
+    query = """SELECT o.*, t.route_short_name
+               FROM observations o JOIN trips t ON o.trip_gtfs_id = t.gtfs_id
+               WHERE o.stop_gtfs_id = ? AND o.service_date >= ? AND o.service_date <= ?"""
     params: list = [stop_id, start_date, end_date]
     if route:
-        query += " AND route_short_name = ?"
+        query += " AND t.route_short_name = ?"
         params.append(route)
 
     rows = db.execute(query, params).fetchall()
@@ -62,14 +63,14 @@ def get_route_breakdown(
 ) -> list[dict]:
     """Per-route statistics."""
     rows = db.execute(
-        """SELECT route_short_name, COUNT(*) as total,
-                  SUM(CASE WHEN realtime = 1 THEN 1 ELSE 0 END) as rt_count,
-                  AVG(CASE WHEN realtime = 1 THEN departure_delay END) as avg_delay,
-                  MAX(CASE WHEN realtime = 1 THEN departure_delay END) as max_delay
-           FROM observations
-           WHERE stop_gtfs_id = ? AND service_date >= ? AND service_date <= ?
-           GROUP BY route_short_name
-           ORDER BY route_short_name""",
+        """SELECT t.route_short_name, COUNT(*) as total,
+                  SUM(CASE WHEN o.realtime = 1 THEN 1 ELSE 0 END) as rt_count,
+                  AVG(CASE WHEN o.realtime = 1 THEN o.departure_delay END) as avg_delay,
+                  MAX(CASE WHEN o.realtime = 1 THEN o.departure_delay END) as max_delay
+           FROM observations o JOIN trips t ON o.trip_gtfs_id = t.gtfs_id
+           WHERE o.stop_gtfs_id = ? AND o.service_date >= ? AND o.service_date <= ?
+           GROUP BY t.route_short_name
+           ORDER BY t.route_short_name""",
         (stop_id, start_date, end_date),
     ).fetchall()
 
@@ -79,10 +80,11 @@ def get_route_breakdown(
         # Calculate on-time % from realtime observations
         if rt_count > 0:
             on_time = db.execute(
-                """SELECT COUNT(*) as cnt FROM observations
-                   WHERE stop_gtfs_id = ? AND service_date >= ? AND service_date <= ?
-                     AND route_short_name = ? AND realtime = 1
-                     AND departure_delay <= 180""",
+                """SELECT COUNT(*) as cnt
+                   FROM observations o JOIN trips t ON o.trip_gtfs_id = t.gtfs_id
+                   WHERE o.stop_gtfs_id = ? AND o.service_date >= ? AND o.service_date <= ?
+                     AND t.route_short_name = ? AND o.realtime = 1
+                     AND o.departure_delay <= 180""",
                 (stop_id, start_date, end_date, r["route_short_name"]),
             ).fetchone()["cnt"]
             on_time_pct = round(on_time / rt_count * 100, 1)
@@ -108,15 +110,15 @@ def get_delay_by_hour(
 ) -> list[dict]:
     """Average delay by hour of day (based on scheduled departure)."""
     query = """SELECT
-                 (scheduled_departure / 3600) as hour,
+                 (o.scheduled_departure / 3600) as hour,
                  COUNT(*) as total,
-                 SUM(CASE WHEN realtime = 1 THEN 1 ELSE 0 END) as rt_count,
-                 AVG(CASE WHEN realtime = 1 THEN departure_delay END) as avg_delay
-               FROM observations
-               WHERE stop_gtfs_id = ? AND service_date >= ? AND service_date <= ?"""
+                 SUM(CASE WHEN o.realtime = 1 THEN 1 ELSE 0 END) as rt_count,
+                 AVG(CASE WHEN o.realtime = 1 THEN o.departure_delay END) as avg_delay
+               FROM observations o JOIN trips t ON o.trip_gtfs_id = t.gtfs_id
+               WHERE o.stop_gtfs_id = ? AND o.service_date >= ? AND o.service_date <= ?"""
     params: list = [stop_id, start_date, end_date]
     if route:
-        query += " AND route_short_name = ?"
+        query += " AND t.route_short_name = ?"
         params.append(route)
     query += " GROUP BY hour ORDER BY hour"
 

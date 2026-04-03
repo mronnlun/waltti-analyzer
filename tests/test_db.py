@@ -9,6 +9,8 @@ from app.db import (
     upsert_observation,
     upsert_observations_batch,
     upsert_stop,
+    upsert_trip,
+    upsert_trips_batch,
 )
 
 
@@ -27,17 +29,24 @@ def test_upsert_stop_updates(db):
     assert stop["name"] == "New Name"
 
 
+def _ensure_trip(db, trip_id, route="3", route_long="Gerby - Keskusta"):
+    upsert_trip(
+        db,
+        gtfs_id=trip_id,
+        route_short_name=route,
+        route_long_name=route_long,
+        mode="BUS",
+        headsign="Keskusta",
+        direction_id=1,
+    )
+
+
 def test_upsert_observation(db):
+    _ensure_trip(db, "Vaasa:trip1")
     obs = {
         "stop_gtfs_id": "Vaasa:309392",
         "trip_gtfs_id": "Vaasa:trip1",
-        "route_short_name": "3",
-        "route_long_name": "Gerby - Keskusta",
-        "mode": "BUS",
-        "headsign": "Keskusta",
-        "direction_id": 1,
         "service_date": "2026-04-02",
-        "service_day_unix": None,
         "scheduled_arrival": 24000,
         "scheduled_departure": 24100,
         "realtime_arrival": None,
@@ -57,16 +66,11 @@ def test_upsert_observation(db):
 
 def test_upsert_observation_updates_on_conflict(db):
     now = int(time.time())
+    _ensure_trip(db, "Vaasa:trip1")
     base = {
         "stop_gtfs_id": "Vaasa:309392",
         "trip_gtfs_id": "Vaasa:trip1",
-        "route_short_name": "3",
-        "route_long_name": "Gerby - Keskusta",
-        "mode": "BUS",
-        "headsign": "Keskusta",
-        "direction_id": 1,
         "service_date": "2026-04-02",
-        "service_day_unix": None,
         "scheduled_arrival": 24000,
         "scheduled_departure": 24100,
         "realtime_arrival": None,
@@ -95,17 +99,24 @@ def test_upsert_observation_updates_on_conflict(db):
 
 def test_batch_upsert(db):
     now = int(time.time())
-    observations = [
+    trips = [
         {
-            "stop_gtfs_id": "Vaasa:309392",
-            "trip_gtfs_id": f"Vaasa:trip{i}",
+            "gtfs_id": f"Vaasa:trip{i}",
             "route_short_name": "3",
             "route_long_name": "Gerby - Keskusta",
             "mode": "BUS",
             "headsign": "Keskusta",
             "direction_id": 1,
+        }
+        for i in range(5)
+    ]
+    upsert_trips_batch(db, trips)
+
+    observations = [
+        {
+            "stop_gtfs_id": "Vaasa:309392",
+            "trip_gtfs_id": f"Vaasa:trip{i}",
             "service_date": "2026-04-02",
-            "service_day_unix": None,
             "scheduled_arrival": 24000 + i * 1800,
             "scheduled_departure": 24100 + i * 1800,
             "realtime_arrival": None,
@@ -127,17 +138,12 @@ def test_batch_upsert(db):
 def test_get_observations_with_route_filter(db):
     now = int(time.time())
     for route, trip in [("3", "trip_a"), ("9", "trip_b")]:
+        _ensure_trip(db, f"Vaasa:{trip}", route=route)
         upsert_observation(
             db,
             stop_gtfs_id="Vaasa:309392",
             trip_gtfs_id=f"Vaasa:{trip}",
-            route_short_name=route,
-            route_long_name="Test",
-            mode="BUS",
-            headsign="Test",
-            direction_id=1,
             service_date="2026-04-02",
-            service_day_unix=None,
             scheduled_arrival=24000,
             scheduled_departure=24100,
             realtime_arrival=None,
@@ -159,18 +165,25 @@ def test_get_observations_with_route_filter(db):
 
 def test_recent_observations(db):
     now = int(time.time())
+    trips = [
+        {
+            "gtfs_id": f"Vaasa:trip{i}",
+            "route_short_name": "3",
+            "route_long_name": "Test",
+            "mode": "BUS",
+            "headsign": "Test",
+            "direction_id": 1,
+        }
+        for i in range(25)
+    ]
+    upsert_trips_batch(db, trips)
+
     for i in range(25):
         upsert_observation(
             db,
             stop_gtfs_id="Vaasa:309392",
             trip_gtfs_id=f"Vaasa:trip{i}",
-            route_short_name="3",
-            route_long_name="Test",
-            mode="BUS",
-            headsign="Test",
-            direction_id=1,
             service_date="2026-04-02",
-            service_day_unix=None,
             scheduled_arrival=24000 + i * 1800,
             scheduled_departure=24100 + i * 1800,
             realtime_arrival=None,

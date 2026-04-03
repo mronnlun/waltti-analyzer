@@ -13,17 +13,21 @@ CREATE TABLE IF NOT EXISTS stops (
     updated_at  INTEGER NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS trips (
+    gtfs_id          TEXT PRIMARY KEY,
+    route_short_name TEXT,
+    route_long_name  TEXT,
+    mode             TEXT,
+    headsign         TEXT,
+    direction_id     INTEGER,
+    updated_at       INTEGER NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS observations (
     id                   INTEGER PRIMARY KEY AUTOINCREMENT,
     stop_gtfs_id         TEXT NOT NULL,
-    trip_gtfs_id         TEXT NOT NULL,
-    route_short_name     TEXT,
-    route_long_name      TEXT,
-    mode                 TEXT,
-    headsign             TEXT,
-    direction_id         INTEGER,
+    trip_gtfs_id         TEXT NOT NULL REFERENCES trips(gtfs_id),
     service_date         TEXT NOT NULL,
-    service_day_unix     INTEGER,
     scheduled_arrival    INTEGER,
     scheduled_departure  INTEGER NOT NULL,
     realtime_arrival     INTEGER,
@@ -133,21 +137,50 @@ def get_all_stop_ids(db: sqlite3.Connection, feed_id: str | None = None) -> list
 
 def get_routes_for_stop(db: sqlite3.Connection, stop_id: str) -> list[str]:
     rows = db.execute(
-        "SELECT DISTINCT route_short_name FROM observations WHERE stop_gtfs_id = ? "
-        "AND route_short_name IS NOT NULL ORDER BY route_short_name",
+        """SELECT DISTINCT t.route_short_name
+           FROM observations o JOIN trips t ON o.trip_gtfs_id = t.gtfs_id
+           WHERE o.stop_gtfs_id = ? AND t.route_short_name IS NOT NULL
+           ORDER BY t.route_short_name""",
         (stop_id,),
     ).fetchall()
     return [r["route_short_name"] for r in rows]
 
 
 def get_all_routes(db: sqlite3.Connection, feed_id: str | None = None) -> list[str]:
-    query = "SELECT DISTINCT route_short_name FROM observations WHERE route_short_name IS NOT NULL"
+    query = """SELECT DISTINCT t.route_short_name
+               FROM observations o JOIN trips t ON o.trip_gtfs_id = t.gtfs_id
+               WHERE t.route_short_name IS NOT NULL"""
     params: list = []
     if feed_id:
-        query += " AND stop_gtfs_id LIKE ?"
+        query += " AND o.stop_gtfs_id LIKE ?"
         params.append(f"{feed_id}:%")
-    query += " ORDER BY route_short_name"
+    query += " ORDER BY t.route_short_name"
     return [r["route_short_name"] for r in db.execute(query, params).fetchall()]
+
+
+# --- Trip operations ---
+
+
+def upsert_trip(db: sqlite3.Connection, **kwargs):
+    db.execute(
+        """INSERT OR REPLACE INTO trips
+        (gtfs_id, route_short_name, route_long_name, mode, headsign, direction_id, updated_at)
+        VALUES
+        (:gtfs_id, :route_short_name, :route_long_name, :mode, :headsign, :direction_id, :updated_at)""",
+        {**kwargs, "updated_at": int(time.time())},
+    )
+    db.commit()
+
+
+def upsert_trips_batch(db: sqlite3.Connection, trips: list[dict]):
+    db.executemany(
+        """INSERT OR REPLACE INTO trips
+        (gtfs_id, route_short_name, route_long_name, mode, headsign, direction_id, updated_at)
+        VALUES
+        (:gtfs_id, :route_short_name, :route_long_name, :mode, :headsign, :direction_id, :updated_at)""",
+        [{**t, "updated_at": int(time.time())} for t in trips],
+    )
+    db.commit()
 
 
 # --- Observation operations ---
@@ -156,13 +189,11 @@ def get_all_routes(db: sqlite3.Connection, feed_id: str | None = None) -> list[s
 def upsert_observation(db: sqlite3.Connection, **kwargs):
     db.execute(
         """INSERT OR REPLACE INTO observations
-        (stop_gtfs_id, trip_gtfs_id, route_short_name, route_long_name, mode,
-         headsign, direction_id, service_date, service_day_unix,
+        (stop_gtfs_id, trip_gtfs_id, service_date,
          scheduled_arrival, scheduled_departure, realtime_arrival, realtime_departure,
          arrival_delay, departure_delay, realtime, realtime_state, queried_at)
         VALUES
-        (:stop_gtfs_id, :trip_gtfs_id, :route_short_name, :route_long_name, :mode,
-         :headsign, :direction_id, :service_date, :service_day_unix,
+        (:stop_gtfs_id, :trip_gtfs_id, :service_date,
          :scheduled_arrival, :scheduled_departure, :realtime_arrival, :realtime_departure,
          :arrival_delay, :departure_delay, :realtime, :realtime_state, :queried_at)""",
         kwargs,
@@ -173,13 +204,11 @@ def upsert_observation(db: sqlite3.Connection, **kwargs):
 def upsert_observations_batch(db: sqlite3.Connection, observations: list[dict]):
     db.executemany(
         """INSERT OR REPLACE INTO observations
-        (stop_gtfs_id, trip_gtfs_id, route_short_name, route_long_name, mode,
-         headsign, direction_id, service_date, service_day_unix,
+        (stop_gtfs_id, trip_gtfs_id, service_date,
          scheduled_arrival, scheduled_departure, realtime_arrival, realtime_departure,
          arrival_delay, departure_delay, realtime, realtime_state, queried_at)
         VALUES
-        (:stop_gtfs_id, :trip_gtfs_id, :route_short_name, :route_long_name, :mode,
-         :headsign, :direction_id, :service_date, :service_day_unix,
+        (:stop_gtfs_id, :trip_gtfs_id, :service_date,
          :scheduled_arrival, :scheduled_departure, :realtime_arrival, :realtime_departure,
          :arrival_delay, :departure_delay, :realtime, :realtime_state, :queried_at)""",
         observations,
@@ -190,13 +219,14 @@ def upsert_observations_batch(db: sqlite3.Connection, observations: list[dict]):
 def get_observations(
     db: sqlite3.Connection, stop_id: str, start_date: str, end_date: str, route: str | None = None
 ) -> list[sqlite3.Row]:
-    query = """SELECT * FROM observations
-               WHERE stop_gtfs_id = ? AND service_date >= ? AND service_date <= ?"""
+    query = """SELECT o.*, t.route_short_name, t.route_long_name, t.mode, t.headsign, t.direction_id
+               FROM observations o JOIN trips t ON o.trip_gtfs_id = t.gtfs_id
+               WHERE o.stop_gtfs_id = ? AND o.service_date >= ? AND o.service_date <= ?"""
     params: list = [stop_id, start_date, end_date]
     if route:
-        query += " AND route_short_name = ?"
+        query += " AND t.route_short_name = ?"
         params.append(route)
-    query += " ORDER BY service_date, scheduled_departure"
+    query += " ORDER BY o.service_date, o.scheduled_departure"
     return db.execute(query, params).fetchall()
 
 
@@ -204,9 +234,10 @@ def get_recent_observations(
     db: sqlite3.Connection, stop_id: str, limit: int = 20
 ) -> list[sqlite3.Row]:
     return db.execute(
-        """SELECT * FROM observations
-           WHERE stop_gtfs_id = ?
-           ORDER BY service_date DESC, scheduled_departure DESC
+        """SELECT o.*, t.route_short_name, t.route_long_name, t.mode, t.headsign, t.direction_id
+           FROM observations o JOIN trips t ON o.trip_gtfs_id = t.gtfs_id
+           WHERE o.stop_gtfs_id = ?
+           ORDER BY o.service_date DESC, o.scheduled_departure DESC
            LIMIT ?""",
         (stop_id, limit),
     ).fetchall()

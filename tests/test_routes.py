@@ -1,7 +1,7 @@
 import time
 from unittest.mock import patch
 
-from app.db import upsert_observations_batch
+from app.db import upsert_observations_batch, upsert_trips_batch
 
 
 def test_dashboard_loads(client):
@@ -11,29 +11,38 @@ def test_dashboard_loads(client):
 
 
 def test_dashboard_with_date_range(client, db):
-    observations = [
-        {
-            "stop_gtfs_id": "Vaasa:309392",
-            "trip_gtfs_id": "Vaasa:trip1",
-            "route_short_name": "3",
-            "route_long_name": "Gerby - Keskusta",
-            "mode": "BUS",
-            "headsign": "Keskusta",
-            "direction_id": 1,
-            "service_date": "2026-04-02",
-            "service_day_unix": None,
-            "scheduled_arrival": 24000,
-            "scheduled_departure": 24100,
-            "realtime_arrival": 24120,
-            "realtime_departure": 24220,
-            "arrival_delay": 120,
-            "departure_delay": 120,
-            "realtime": 1,
-            "realtime_state": "UPDATED",
-            "queried_at": int(time.time()),
-        }
-    ]
-    upsert_observations_batch(db, observations)
+    upsert_trips_batch(
+        db,
+        [
+            {
+                "gtfs_id": "Vaasa:trip1",
+                "route_short_name": "3",
+                "route_long_name": "Gerby - Keskusta",
+                "mode": "BUS",
+                "headsign": "Keskusta",
+                "direction_id": 1,
+            }
+        ],
+    )
+    upsert_observations_batch(
+        db,
+        [
+            {
+                "stop_gtfs_id": "Vaasa:309392",
+                "trip_gtfs_id": "Vaasa:trip1",
+                "service_date": "2026-04-02",
+                "scheduled_arrival": 24000,
+                "scheduled_departure": 24100,
+                "realtime_arrival": 24120,
+                "realtime_departure": 24220,
+                "arrival_delay": 120,
+                "departure_delay": 120,
+                "realtime": 1,
+                "realtime_state": "UPDATED",
+                "queried_at": int(time.time()),
+            }
+        ],
+    )
 
     resp = client.get("/?stop_id=Vaasa:309392&from=2026-04-02&to=2026-04-02")
     assert resp.status_code == 200
