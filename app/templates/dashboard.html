@@ -18,7 +18,7 @@
                     </option>
                     {% endfor %}
                 {% else %}
-                    <option value="{{ stop_id }}">{{ stop_id }} (click Discover Stops)</option>
+                    <option value="{{ stop_id }}">{{ stop_id }} (loading stops...)</option>
                 {% endif %}
             </select>
         </label>
@@ -35,9 +35,6 @@
         <button type="submit">Analyze</button>
     </form>
     <div class="actions">
-        <button onclick="discoverStops()">Discover Stops</button>
-        <button onclick="collectDaily()">Collect Today</button>
-        <button onclick="pollRealtime()">Poll Realtime</button>
         <span id="action-status"></span>
     </div>
 </section>
@@ -133,8 +130,8 @@
 {% else %}
 <section class="stats-section">
     <p>Select a stop and date range, then click <strong>Analyze</strong> to see timeliness data.</p>
-    <p><strong>First time?</strong> Click <strong>Discover Stops</strong> to populate the stop list,
-       then <strong>Collect Today</strong> to fetch schedules.</p>
+    <p><strong>First time?</strong> Stops and schedules are collected automatically by the scheduler.
+       Data will appear here once the first collection completes.</p>
 </section>
 {% endif %}
 
@@ -175,59 +172,6 @@
 {% block scripts %}
 <script>
 const currentStopId = document.getElementById('stop-select')?.value || '';
-
-async function discoverStops() {
-    const status = document.getElementById('action-status');
-    status.textContent = 'Discovering stops...';
-    try {
-        const resp = await fetch('/api/discover', {method: 'POST'});
-        const data = await resp.json();
-        status.textContent = data.status === 'ok'
-            ? `Found ${data.stops} stops, ${data.routes} routes`
-            : data.message || data.status;
-        if (data.status === 'ok') setTimeout(() => location.reload(), 1500);
-    } catch (e) {
-        status.textContent = 'Error: ' + e.message;
-    }
-}
-
-async function collectDaily() {
-    const status = document.getElementById('action-status');
-    status.textContent = 'Collecting all stops...';
-    try {
-        const resp = await fetch('/api/collect/daily', {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({})
-        });
-        const data = await resp.json();
-        status.textContent = data.status === 'ok'
-            ? `Collected ${data.departures} departures across ${data.stops_with_service || '?'} stops`
-            : data.message || data.status;
-        if (data.status === 'ok') setTimeout(() => location.reload(), 1500);
-    } catch (e) {
-        status.textContent = 'Error: ' + e.message;
-    }
-}
-
-async function pollRealtime() {
-    const status = document.getElementById('action-status');
-    status.textContent = 'Polling all stops...';
-    try {
-        const resp = await fetch('/api/collect/realtime', {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({})
-        });
-        const data = await resp.json();
-        status.textContent = data.status === 'ok'
-            ? `Updated ${data.updated} departures (${data.stops_with_data || '?'} stops with data)`
-            : data.message || data.status;
-        if (data.status === 'ok') setTimeout(() => location.reload(), 1500);
-    } catch (e) {
-        status.textContent = 'Error: ' + e.message;
-    }
-}
 
 {% if hourly_delays %}
 const ctx = document.getElementById('hourlyChart').getContext('2d');

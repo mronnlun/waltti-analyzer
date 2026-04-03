@@ -5,7 +5,7 @@
 {% block content %}
 <h1>Bus Stops — {{ feed_id }}</h1>
 <p>{{ all_stops | length }} stops discovered.
-{% if not all_stops %}Click <strong>Discover Stops</strong> on the dashboard first.{% endif %}
+{% if not all_stops %}Stops are discovered automatically on startup. Please wait a moment and refresh.{% endif %}
 </p>
 
 {% if all_stops %}

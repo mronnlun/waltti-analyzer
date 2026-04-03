@@ -1,7 +1,7 @@
 targetScope = 'resourceGroup'
 
 @description('Base name for all resources')
-param appName string = 'waltti-analyzer'
+param appName string = 'walttianalyzer'
 
 @description('Azure region for resources')
 param location string = resourceGroup().location
