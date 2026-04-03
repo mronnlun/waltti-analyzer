@@ -11,6 +11,9 @@ def app(tmp_path):
 
     class _TestConfig(TestConfig):
         DATABASE_PATH = db_path
+        FEED_ID = "Vaasa"
+        DEFAULT_STOP_ID = "Vaasa:309392"
+        API_RATE_LIMIT_DELAY = 0.0
 
     app = create_app(_TestConfig)
     yield app

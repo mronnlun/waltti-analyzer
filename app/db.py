@@ -104,8 +104,50 @@ def upsert_stop(
     db.commit()
 
 
+def upsert_stops_batch(db: sqlite3.Connection, stops: list[dict]):
+    db.executemany(
+        "INSERT OR REPLACE INTO stops (gtfs_id, name, code, lat, lon, updated_at) "
+        "VALUES (:gtfs_id, :name, :code, :lat, :lon, :updated_at)",
+        [{**s, "updated_at": int(time.time())} for s in stops],
+    )
+    db.commit()
+
+
 def get_stop(db: sqlite3.Connection, gtfs_id: str) -> sqlite3.Row | None:
     return db.execute("SELECT * FROM stops WHERE gtfs_id = ?", (gtfs_id,)).fetchone()
+
+
+def get_all_stops(db: sqlite3.Connection, feed_id: str | None = None) -> list[sqlite3.Row]:
+    if feed_id:
+        return db.execute(
+            "SELECT * FROM stops WHERE gtfs_id LIKE ? ORDER BY name",
+            (f"{feed_id}:%",),
+        ).fetchall()
+    return db.execute("SELECT * FROM stops ORDER BY name").fetchall()
+
+
+def get_all_stop_ids(db: sqlite3.Connection, feed_id: str | None = None) -> list[str]:
+    rows = get_all_stops(db, feed_id)
+    return [r["gtfs_id"] for r in rows]
+
+
+def get_routes_for_stop(db: sqlite3.Connection, stop_id: str) -> list[str]:
+    rows = db.execute(
+        "SELECT DISTINCT route_short_name FROM observations WHERE stop_gtfs_id = ? "
+        "AND route_short_name IS NOT NULL ORDER BY route_short_name",
+        (stop_id,),
+    ).fetchall()
+    return [r["route_short_name"] for r in rows]
+
+
+def get_all_routes(db: sqlite3.Connection, feed_id: str | None = None) -> list[str]:
+    query = "SELECT DISTINCT route_short_name FROM observations WHERE route_short_name IS NOT NULL"
+    params: list = []
+    if feed_id:
+        query += " AND stop_gtfs_id LIKE ?"
+        params.append(f"{feed_id}:%")
+    query += " ORDER BY route_short_name"
+    return [r["route_short_name"] for r in db.execute(query, params).fetchall()]
 
 
 # --- Observation operations ---

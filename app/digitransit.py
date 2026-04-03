@@ -93,6 +93,27 @@ QUERY_STOPS_BY_RADIUS = """
 }
 """
 
+QUERY_FEED_ROUTES = """
+{
+  routes {
+    gtfsId
+    shortName
+    longName
+    mode
+    patterns {
+      directionId
+      stops {
+        gtfsId
+        name
+        code
+        lat
+        lon
+      }
+    }
+  }
+}
+"""
+
 
 class DigitransitClient:
     def __init__(self, api_url: str, api_key: str):
@@ -146,3 +167,42 @@ class DigitransitClient:
         data = self._query(QUERY_STOPS_BY_RADIUS % (lat, lon, radius))
         edges = data.get("stopsByRadius", {}).get("edges", [])
         return [{**edge["node"]["stop"], "distance": edge["node"]["distance"]} for edge in edges]
+
+    def discover_feed_stops(self, feed_id: str) -> tuple[list[dict], list[dict]]:
+        """Discover all stops and routes for a feed (e.g. 'Vaasa').
+
+        Returns (stops, routes) where stops are unique stop dicts and
+        routes are route dicts with their stop IDs.
+        """
+        data = self._query(QUERY_FEED_ROUTES)
+        all_routes = data.get("routes", [])
+
+        stops = {}
+        routes = []
+        for r in all_routes:
+            if not r["gtfsId"].startswith(f"{feed_id}:"):
+                continue
+            route_stop_ids = set()
+            for p in r.get("patterns", []):
+                for s in p.get("stops", []):
+                    sid = s["gtfsId"]
+                    if sid.startswith(f"{feed_id}:"):
+                        stops[sid] = {
+                            "gtfs_id": sid,
+                            "name": s["name"],
+                            "code": s.get("code"),
+                            "lat": s.get("lat"),
+                            "lon": s.get("lon"),
+                        }
+                        route_stop_ids.add(sid)
+            routes.append(
+                {
+                    "gtfs_id": r["gtfsId"],
+                    "short_name": r.get("shortName"),
+                    "long_name": r.get("longName"),
+                    "mode": r.get("mode"),
+                    "stop_ids": list(route_stop_ids),
+                }
+            )
+
+        return list(stops.values()), routes

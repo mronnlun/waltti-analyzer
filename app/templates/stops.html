@@ -1,47 +1,54 @@
 {% extends "base.html" %}
 
-{% block title %}Stop Discovery — Waltti Analyzer{% endblock %}
+{% block title %}Stops — Waltti Analyzer{% endblock %}
 
 {% block content %}
-<h1>Stop Discovery</h1>
-<p>Current target stop: <strong>{{ stop_id }}</strong></p>
+<h1>Bus Stops — {{ feed_id }}</h1>
+<p>{{ all_stops | length }} stops discovered.
+{% if not all_stops %}Click <strong>Discover Stops</strong> on the dashboard first.{% endif %}
+</p>
 
+{% if all_stops %}
 <section class="controls">
-    <form id="search-form">
-        <label>Search by name: <input type="text" id="stop-name" placeholder="e.g. Gerbynmäentie"></label>
-        <button type="submit">Search</button>
-    </form>
+    <input type="text" id="stop-filter" placeholder="Filter stops..." style="width: 300px; padding: 0.4rem; border: 1px solid #ddd; border-radius: 4px;">
 </section>
 
 <section class="stats-section">
-    <div id="results"></div>
+    <table class="data-table" id="stops-table">
+        <thead>
+            <tr>
+                <th>Name</th>
+                <th>GTFS ID</th>
+                <th>Lat</th>
+                <th>Lon</th>
+                <th></th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for s in all_stops %}
+            <tr>
+                <td>{{ s.name }}</td>
+                <td>{{ s.gtfs_id }}</td>
+                <td>{{ "%.4f"|format(s.lat) if s.lat else "" }}</td>
+                <td>{{ "%.4f"|format(s.lon) if s.lon else "" }}</td>
+                <td><a href="/?stop_id={{ s.gtfs_id }}">View</a></td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
 </section>
+{% endif %}
 {% endblock %}
 
 {% block scripts %}
 <script>
-document.getElementById('search-form').addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const name = document.getElementById('stop-name').value;
-    if (!name) return;
-
-    const resultsDiv = document.getElementById('results');
-    resultsDiv.innerHTML = 'Searching...';
-
-    try {
-        const resp = await fetch('/api/collect/daily', {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-        });
-        // For now, show info about using the API directly
-        resultsDiv.innerHTML = `
-            <p>Stop search is done via the Digitransit API. Use the GraphQL query:</p>
-            <pre>{ stops(name: "${name}") { gtfsId name code lat lon } }</pre>
-            <p>Or configure <code>TARGET_STOP_ID</code> in your <code>.env</code> file.</p>
-        `;
-    } catch (e) {
-        resultsDiv.innerHTML = 'Error: ' + e.message;
-    }
+document.getElementById('stop-filter')?.addEventListener('input', function() {
+    const filter = this.value.toLowerCase();
+    const rows = document.querySelectorAll('#stops-table tbody tr');
+    rows.forEach(row => {
+        const text = row.textContent.toLowerCase();
+        row.style.display = text.includes(filter) ? '' : 'none';
+    });
 });
 </script>
 {% endblock %}

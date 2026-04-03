@@ -5,17 +5,37 @@
 
 {% block content %}
 <h1>Bus Stop Timeliness Dashboard</h1>
-<p class="subtitle">Stop: {{ stop_id }}</p>
 
 <!-- Controls -->
 <section class="controls">
     <form method="get" action="/" class="date-form">
+        <label>Stop:
+            <select name="stop_id" id="stop-select">
+                {% if all_stops %}
+                    {% for s in all_stops %}
+                    <option value="{{ s.gtfs_id }}" {% if s.gtfs_id == stop_id %}selected{% endif %}>
+                        {{ s.name }} ({{ s.gtfs_id }})
+                    </option>
+                    {% endfor %}
+                {% else %}
+                    <option value="{{ stop_id }}">{{ stop_id }} (click Discover Stops)</option>
+                {% endif %}
+            </select>
+        </label>
         <label>From: <input type="date" name="from" value="{{ from_date }}"></label>
         <label>To: <input type="date" name="to" value="{{ to_date }}"></label>
-        <label>Route: <input type="text" name="route" value="{{ route_filter or '' }}" placeholder="all"></label>
+        <label>Route:
+            <select name="route">
+                <option value="">All</option>
+                {% for r in stop_routes %}
+                <option value="{{ r }}" {% if r == route_filter %}selected{% endif %}>{{ r }}</option>
+                {% endfor %}
+            </select>
+        </label>
         <button type="submit">Analyze</button>
     </form>
     <div class="actions">
+        <button onclick="discoverStops()">Discover Stops</button>
         <button onclick="collectDaily()">Collect Today</button>
         <button onclick="pollRealtime()">Poll Realtime</button>
         <span id="action-status"></span>
@@ -46,7 +66,7 @@
 <!-- Timeliness Breakdown -->
 <section class="stats-section">
     <h2>Timeliness Breakdown</h2>
-    <p>Based on {{ summary.with_realtime }} departures with realtime data</p>
+    <p>Based on {{ summary.with_realtime }} departures with realtime data ({{ summary.service_days }} service days)</p>
     <table>
         <tr><td>On time (≤3 min)</td><td>{{ summary.on_time }} ({{ summary.on_time_pct }}%)</td></tr>
         <tr><td>Slightly late (3–10 min)</td><td>{{ summary.slightly_late }}</td></tr>
@@ -59,7 +79,7 @@
 
     {% if summary.with_realtime_pct < 70 %}
     <div class="warning">
-        ⚠ Only {{ summary.with_realtime_pct }}% of observations have realtime data.
+        Only {{ summary.with_realtime_pct }}% of observations have realtime data.
         The scheduler must be running during service hours to capture delay data.
     </div>
     {% endif %}
@@ -112,14 +132,15 @@
 </section>
 {% else %}
 <section class="stats-section">
-    <p>Select a date range and click <strong>Analyze</strong> to see timeliness data.</p>
-    <p>Use <strong>Collect Today</strong> to fetch today's schedule, or <strong>Poll Realtime</strong> to capture current delay data.</p>
+    <p>Select a stop and date range, then click <strong>Analyze</strong> to see timeliness data.</p>
+    <p><strong>First time?</strong> Click <strong>Discover Stops</strong> to populate the stop list,
+       then <strong>Collect Today</strong> to fetch schedules.</p>
 </section>
 {% endif %}
 
 <!-- Recent Observations -->
 <section class="stats-section">
-    <h2>Recent Observations</h2>
+    <h2>Recent Observations{% if stop_id %} — {{ stop_id }}{% endif %}</h2>
     {% if recent %}
     <table class="data-table">
         <thead>
@@ -146,23 +167,44 @@
         </tbody>
     </table>
     {% else %}
-    <p>No observations yet. Click <strong>Collect Today</strong> to start.</p>
+    <p>No observations yet for this stop.</p>
     {% endif %}
 </section>
 {% endblock %}
 
 {% block scripts %}
 <script>
-async function collectDaily() {
+const currentStopId = document.getElementById('stop-select')?.value || '';
+
+async function discoverStops() {
     const status = document.getElementById('action-status');
-    status.textContent = 'Collecting...';
+    status.textContent = 'Discovering stops...';
     try {
-        const resp = await fetch('/api/collect/daily', {method: 'POST'});
+        const resp = await fetch('/api/discover', {method: 'POST'});
         const data = await resp.json();
         status.textContent = data.status === 'ok'
-            ? `Collected ${data.departures} departures`
+            ? `Found ${data.stops} stops, ${data.routes} routes`
             : data.message || data.status;
-        if (data.status === 'ok') setTimeout(() => location.reload(), 1000);
+        if (data.status === 'ok') setTimeout(() => location.reload(), 1500);
+    } catch (e) {
+        status.textContent = 'Error: ' + e.message;
+    }
+}
+
+async function collectDaily() {
+    const status = document.getElementById('action-status');
+    status.textContent = 'Collecting all stops...';
+    try {
+        const resp = await fetch('/api/collect/daily', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({})
+        });
+        const data = await resp.json();
+        status.textContent = data.status === 'ok'
+            ? `Collected ${data.departures} departures across ${data.stops_with_service || '?'} stops`
+            : data.message || data.status;
+        if (data.status === 'ok') setTimeout(() => location.reload(), 1500);
     } catch (e) {
         status.textContent = 'Error: ' + e.message;
     }
@@ -170,14 +212,18 @@ async function collectDaily() {
 
 async function pollRealtime() {
     const status = document.getElementById('action-status');
-    status.textContent = 'Polling...';
+    status.textContent = 'Polling all stops...';
     try {
-        const resp = await fetch('/api/collect/realtime', {method: 'POST'});
+        const resp = await fetch('/api/collect/realtime', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({})
+        });
         const data = await resp.json();
         status.textContent = data.status === 'ok'
-            ? `Updated ${data.updated} departures (${data.with_realtime} realtime)`
+            ? `Updated ${data.updated} departures (${data.stops_with_data || '?'} stops with data)`
             : data.message || data.status;
-        if (data.status === 'ok') setTimeout(() => location.reload(), 1000);
+        if (data.status === 'ok') setTimeout(() => location.reload(), 1500);
     } catch (e) {
         status.textContent = 'Error: ' + e.message;
     }

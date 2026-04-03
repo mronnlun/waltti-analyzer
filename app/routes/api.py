@@ -1,8 +1,8 @@
 from flask import Blueprint, current_app, jsonify, request
 
 from app.analyzer import get_summary
-from app.collector import collect_daily, poll_realtime_once
-from app.db import get_db, get_latest_collection, get_observations
+from app.collector import collect_daily, discover_stops, poll_realtime_once
+from app.db import get_all_routes, get_all_stops, get_db, get_latest_collection, get_observations
 
 api_bp = Blueprint("api", __name__)
 
@@ -11,51 +11,100 @@ api_bp = Blueprint("api", __name__)
 def trigger_daily():
     data = request.get_json(silent=True) or {}
     date = data.get("date")
-    stop_id = current_app.config["TARGET_STOP_ID"]
+    stop_id = data.get("stop_id")
     api_key = current_app.config["DIGITRANSIT_API_KEY"]
     api_url = current_app.config["DIGITRANSIT_API_URL"]
     db_path = current_app.config["DATABASE_PATH"]
+    feed_id = current_app.config["FEED_ID"]
+    rate_limit = current_app.config["API_RATE_LIMIT_DELAY"]
 
-    result = collect_daily(db_path, api_url, api_key, stop_id, date)
+    result = collect_daily(
+        db_path,
+        api_url,
+        api_key,
+        stop_id=stop_id,
+        service_date=date,
+        feed_id=feed_id,
+        rate_limit_delay=rate_limit,
+    )
     return jsonify(result)
 
 
 @api_bp.route("/collect/realtime", methods=["POST"])
 def trigger_realtime():
-    stop_id = current_app.config["TARGET_STOP_ID"]
+    data = request.get_json(silent=True) or {}
+    stop_id = data.get("stop_id")
     api_key = current_app.config["DIGITRANSIT_API_KEY"]
     api_url = current_app.config["DIGITRANSIT_API_URL"]
     db_path = current_app.config["DATABASE_PATH"]
+    feed_id = current_app.config["FEED_ID"]
+    rate_limit = current_app.config["API_RATE_LIMIT_DELAY"]
 
-    result = poll_realtime_once(db_path, api_url, api_key, stop_id)
+    result = poll_realtime_once(
+        db_path,
+        api_url,
+        api_key,
+        stop_id=stop_id,
+        feed_id=feed_id,
+        rate_limit_delay=rate_limit,
+    )
+    return jsonify(result)
+
+
+@api_bp.route("/discover", methods=["POST"])
+def trigger_discover():
+    api_key = current_app.config["DIGITRANSIT_API_KEY"]
+    api_url = current_app.config["DIGITRANSIT_API_URL"]
+    db_path = current_app.config["DATABASE_PATH"]
+    feed_id = current_app.config["FEED_ID"]
+
+    result = discover_stops(db_path, api_url, api_key, feed_id)
     return jsonify(result)
 
 
 @api_bp.route("/status")
 def status():
     db = get_db()
-    stop_id = current_app.config["TARGET_STOP_ID"]
+    feed_id = current_app.config["FEED_ID"]
 
-    daily = get_latest_collection(db, stop_id, "daily")
-    realtime = get_latest_collection(db, stop_id, "realtime")
+    daily = get_latest_collection(db, feed_id, "daily")
+    realtime = get_latest_collection(db, feed_id, "realtime")
 
     return jsonify(
         {
-            "stop_id": stop_id,
+            "feed_id": feed_id,
             "last_daily": dict(daily) if daily else None,
             "last_realtime": dict(realtime) if realtime else None,
         }
     )
 
 
+@api_bp.route("/stops")
+def stops_list():
+    db = get_db()
+    feed_id = current_app.config["FEED_ID"]
+    stops = get_all_stops(db, feed_id)
+    return jsonify([dict(s) for s in stops])
+
+
+@api_bp.route("/routes")
+def routes_list():
+    db = get_db()
+    feed_id = current_app.config["FEED_ID"]
+    routes = get_all_routes(db, feed_id)
+    return jsonify(routes)
+
+
 @api_bp.route("/observations")
 def observations():
     db = get_db()
-    stop_id = current_app.config["TARGET_STOP_ID"]
+    stop_id = request.args.get("stop_id", "")
     date = request.args.get("date", "")
 
     if not date:
         return jsonify({"error": "date parameter required (YYYY-MM-DD)"}), 400
+    if not stop_id:
+        return jsonify({"error": "stop_id parameter required"}), 400
 
     rows = get_observations(db, stop_id, date, date)
     return jsonify([dict(r) for r in rows])
@@ -64,13 +113,13 @@ def observations():
 @api_bp.route("/summary")
 def summary():
     db = get_db()
-    stop_id = current_app.config["TARGET_STOP_ID"]
+    stop_id = request.args.get("stop_id", "")
     from_date = request.args.get("from", "")
     to_date = request.args.get("to", "")
     route = request.args.get("route")
 
-    if not from_date or not to_date:
-        return jsonify({"error": "from and to parameters required (YYYY-MM-DD)"}), 400
+    if not from_date or not to_date or not stop_id:
+        return jsonify({"error": "stop_id, from, and to parameters required"}), 400
 
     result = get_summary(db, stop_id, from_date, to_date, route)
     return jsonify(result)

@@ -35,7 +35,7 @@ def test_dashboard_with_date_range(client, db):
     ]
     upsert_observations_batch(db, observations)
 
-    resp = client.get("/?from=2026-04-02&to=2026-04-02")
+    resp = client.get("/?stop_id=Vaasa:309392&from=2026-04-02&to=2026-04-02")
     assert resp.status_code == 200
     assert b"Total Departures" in resp.data
 
@@ -43,14 +43,14 @@ def test_dashboard_with_date_range(client, db):
 def test_stops_page(client):
     resp = client.get("/stops")
     assert resp.status_code == 200
-    assert b"Stop Discovery" in resp.data
+    assert b"Bus Stops" in resp.data
 
 
 def test_api_status(client):
     resp = client.get("/api/status")
     assert resp.status_code == 200
     data = resp.get_json()
-    assert data["stop_id"] == "Vaasa:309392"
+    assert data["feed_id"] == "Vaasa"
 
 
 def test_api_observations_requires_date(client):
@@ -58,7 +58,12 @@ def test_api_observations_requires_date(client):
     assert resp.status_code == 400
 
 
-def test_api_summary_requires_dates(client):
+def test_api_observations_requires_stop_id(client):
+    resp = client.get("/api/observations?date=2026-04-02")
+    assert resp.status_code == 400
+
+
+def test_api_summary_requires_params(client):
     resp = client.get("/api/summary")
     assert resp.status_code == 400
 
@@ -79,3 +84,24 @@ def test_api_collect_realtime(client):
         assert resp.status_code == 200
         data = resp.get_json()
         assert data["status"] == "ok"
+
+
+def test_api_discover(client):
+    with patch("app.routes.api.discover_stops") as mock_discover:
+        mock_discover.return_value = {"status": "ok", "stops": 554, "routes": 39}
+        resp = client.post("/api/discover")
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert data["stops"] == 554
+
+
+def test_api_stops_list(client):
+    resp = client.get("/api/stops")
+    assert resp.status_code == 200
+    assert isinstance(resp.get_json(), list)
+
+
+def test_api_routes_list(client):
+    resp = client.get("/api/routes")
+    assert resp.status_code == 200
+    assert isinstance(resp.get_json(), list)
