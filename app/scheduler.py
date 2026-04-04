@@ -95,7 +95,7 @@ def init_scheduler(app):
         misfire_grace_time=3600,
     )
 
-    # Realtime polling every 10 minutes at :09, :19, :29, ... :59
+    # Realtime polling every 10 minutes (interval, not clock-aligned)
     def _realtime_poll():
         logger.debug(
             "Scheduler run starting: realtime_poll feed=%s",
@@ -106,16 +106,17 @@ def init_scheduler(app):
 
     _scheduler.add_job(
         _realtime_poll,
-        "cron",
-        minute="9,19,29,39,49,59",
+        "interval",
+        minutes=10,
         id="realtime_poll",
         misfire_grace_time=600,
     )
 
     _scheduler.start()
 
-    # Discover stops immediately on first startup
+    # Run discover + first realtime poll immediately on startup
     _scheduler.add_job(_discover, id="discover_startup", misfire_grace_time=60)
+    _scheduler.add_job(_realtime_poll, id="realtime_startup", misfire_grace_time=60)
 
     logger.info(
         "Scheduler: discover weekly, daily@03:00+23:00,"
