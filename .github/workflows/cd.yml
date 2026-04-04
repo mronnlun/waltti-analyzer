@@ -73,6 +73,18 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Build deployment package
+        run: |
+          python -m venv antenv
+          source antenv/bin/activate
+          pip install -r requirements.txt
+          zip -r deploy.zip . -x '.git/*' '.github/*' '.venv/*' 'tests/*' '.pytest*' '*.pyc' '__pycache__/*'
+
       - name: Azure Login
         uses: azure/login@v3
         with:
@@ -81,7 +93,9 @@ jobs:
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
       - name: Deploy to App Service
-        uses: azure/webapps-deploy@v3
-        with:
-          app-name: ${{ needs.deploy-infra.outputs.appName }}
-          package: .
+        run: |
+          az webapp deploy \
+            --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
+            --name ${{ needs.deploy-infra.outputs.appName }} \
+            --src-path deploy.zip \
+            --type zip
