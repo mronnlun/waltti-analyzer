@@ -7,10 +7,28 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from app.collector import collect_daily, discover_stops, poll_realtime_once
 
 logger = logging.getLogger(__name__)
+_scheduler_logger_configured = False
 
 _scheduler: BackgroundScheduler | None = None
 
 HELSINKI_TZ = ZoneInfo("Europe/Helsinki")
+
+
+def _ensure_scheduler_debug_logging() -> None:
+    global _scheduler_logger_configured
+
+    if _scheduler_logger_configured:
+        return
+
+    handler = logging.StreamHandler()
+    handler.setLevel(logging.DEBUG)
+    handler.setFormatter(
+        logging.Formatter("%(asctime)s %(levelname)s [%(name)s] %(message)s")
+    )
+    logger.addHandler(handler)
+    logger.setLevel(logging.DEBUG)
+    logger.propagate = False
+    _scheduler_logger_configured = True
 
 
 def init_scheduler(app):
@@ -18,6 +36,8 @@ def init_scheduler(app):
 
     if _scheduler is not None:
         return
+
+    _ensure_scheduler_debug_logging()
 
     api_url = app.config["DIGITRANSIT_API_URL"]
     api_key = app.config["DIGITRANSIT_API_KEY"]
@@ -36,7 +56,9 @@ def init_scheduler(app):
 
     # Discover stops on startup and weekly
     def _discover():
-        discover_stops(db_path, api_url, api_key, feed_id)
+        logger.debug("Scheduler run starting: discover_stops feed=%s", feed_id)
+        result = discover_stops(db_path, api_url, api_key, feed_id)
+        logger.debug("Scheduler run finished: discover_stops result=%s", result)
 
     _scheduler.add_job(
         _discover,
@@ -50,7 +72,19 @@ def init_scheduler(app):
 
     # Daily collection at 03:00 Helsinki time — all stops
     def _daily():
-        collect_daily(db_path, api_url, api_key, feed_id=feed_id, rate_limit_delay=rate_limit)
+        logger.debug(
+            "Scheduler run starting: daily_collection feed=%s rate_limit=%s",
+            feed_id,
+            rate_limit,
+        )
+        result = collect_daily(
+            db_path,
+            api_url,
+            api_key,
+            feed_id=feed_id,
+            rate_limit_delay=rate_limit,
+        )
+        logger.debug("Scheduler run finished: daily_collection result=%s", result)
 
     _scheduler.add_job(
         _daily,
@@ -64,10 +98,26 @@ def init_scheduler(app):
     # Realtime polling with hour guard — all stops
     def _guarded_poll():
         now = datetime.now(HELSINKI_TZ)
+        logger.debug(
+            "Scheduler run starting: realtime_poll feed=%s now=%s window=%02d:00-%02d:00",
+            feed_id,
+            now.isoformat(),
+            start_hour,
+            end_hour,
+        )
         if start_hour <= now.hour < end_hour:
-            poll_realtime_once(
+            result = poll_realtime_once(
                 db_path, api_url, api_key, feed_id=feed_id, rate_limit_delay=rate_limit
             )
+            logger.debug("Scheduler run finished: realtime_poll result=%s", result)
+            return
+
+        logger.debug(
+            "Scheduler run skipped: realtime_poll outside active hours now_hour=%02d window=%02d-%02d",
+            now.hour,
+            start_hour,
+            end_hour,
+        )
 
     _scheduler.add_job(
         _guarded_poll,
