@@ -82,6 +82,31 @@ resource sqlDatabase 'Microsoft.Sql/servers/databases@2023-08-01-preview' = {
   }
 }
 
+// --- SQL Database Automatic Tuning ---
+resource sqlAutoTuning 'Microsoft.Sql/servers/databases/advisors@2014-04-01' = {
+  parent: sqlDatabase
+  name: 'ForceLastGoodPlan'
+  properties: {
+    autoExecuteValue: 'Enabled'
+  }
+}
+
+resource sqlAutoTuningCreateIndex 'Microsoft.Sql/servers/databases/advisors@2014-04-01' = {
+  parent: sqlDatabase
+  name: 'CreateIndex'
+  properties: {
+    autoExecuteValue: 'Enabled'
+  }
+}
+
+resource sqlAutoTuningDropIndex 'Microsoft.Sql/servers/databases/advisors@2014-04-01' = {
+  parent: sqlDatabase
+  name: 'DropIndex'
+  properties: {
+    autoExecuteValue: 'Enabled'
+  }
+}
+
 // --- Log Analytics Workspace (required by Application Insights) ---
 resource logAnalytics 'Microsoft.OperationalInsights/workspaces@2023-09-01' = {
   name: '${projectName}-${env}-log'
