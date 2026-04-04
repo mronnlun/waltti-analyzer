@@ -44,7 +44,10 @@ def init_scheduler(app):
         logger.warning("DIGITRANSIT_API_KEY not set — scheduler disabled")
         return
 
-    _scheduler = BackgroundScheduler(timezone=HELSINKI_TZ)
+    _scheduler = BackgroundScheduler(
+        timezone=HELSINKI_TZ,
+        job_defaults={"coalesce": True, "max_instances": 1},
+    )
 
     # Discover stops on startup and weekly
     def _discover():
@@ -107,9 +110,9 @@ def init_scheduler(app):
     _scheduler.add_job(
         _realtime_poll,
         "interval",
-        minutes=10,
+        minutes=3,
         id="realtime_poll",
-        misfire_grace_time=600,
+        misfire_grace_time=120,
     )
 
     _scheduler.start()
@@ -120,7 +123,7 @@ def init_scheduler(app):
 
     logger.info(
         "Scheduler: discover weekly, daily@03:00+23:00,"
-        " realtime every 10min around the clock, feed=%s",
+        " realtime every 3min around the clock, feed=%s",
         feed_id,
     )
 
