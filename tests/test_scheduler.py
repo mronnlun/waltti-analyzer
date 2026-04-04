@@ -1,4 +1,3 @@
-from datetime import datetime
 from unittest.mock import Mock
 
 from flask import Flask
@@ -28,10 +27,6 @@ def _make_app():
         DIGITRANSIT_API_KEY="test-key",
         FEED_ID="Vaasa",
         DATABASE_PATH="data/test.db",
-        POLL_INTERVAL_SECONDS=60,
-        POLL_START_HOUR=5,
-        POLL_END_HOUR=24,
-        API_RATE_LIMIT_DELAY=0.0,
     )
     return app
 
@@ -65,18 +60,12 @@ def test_daily_job_emits_debug_output(monkeypatch, capsys):
     assert "'departures': 12" in output
 
 
-def test_realtime_job_logs_skip_outside_active_hours(monkeypatch, capsys):
+def test_realtime_job_polls_unconditionally(monkeypatch, capsys):
     _reset_scheduler_logger_state()
-
-    class FixedDateTime:
-        @classmethod
-        def now(cls, tz=None):
-            return datetime(2026, 4, 4, 2, 0, tzinfo=scheduler.HELSINKI_TZ)
 
     poll_mock = Mock(return_value={"status": "ok", "updated": 3})
 
     monkeypatch.setattr(scheduler, "BackgroundScheduler", FakeScheduler)
-    monkeypatch.setattr(scheduler, "datetime", FixedDateTime)
     monkeypatch.setattr(scheduler, "poll_realtime_once", poll_mock)
 
     scheduler.init_scheduler(_make_app())
@@ -86,5 +75,5 @@ def test_realtime_job_logs_skip_outside_active_hours(monkeypatch, capsys):
 
     output = capsys.readouterr().err
     assert "Scheduler run starting: realtime_poll" in output
-    assert "Scheduler run skipped: realtime_poll outside active hours" in output
-    poll_mock.assert_not_called()
+    assert "Scheduler run finished: realtime_poll" in output
+    poll_mock.assert_called_once()

@@ -14,9 +14,6 @@ class Config:
     FEED_ID = os.environ.get("FEED_ID", "Vaasa")
     DEFAULT_STOP_ID = os.environ.get("DEFAULT_STOP_ID", "Vaasa:309392")
     DATABASE_PATH = os.environ.get("DATABASE_PATH", "data/waltti.db")
-    POLL_INTERVAL_SECONDS = int(os.environ.get("POLL_INTERVAL_SECONDS", "300"))
-    POLL_START_HOUR = int(os.environ.get("POLL_START_HOUR", "5"))
-    POLL_END_HOUR = int(os.environ.get("POLL_END_HOUR", "24"))
 
 
 class TestConfig(Config):

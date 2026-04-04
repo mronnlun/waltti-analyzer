@@ -1,5 +1,4 @@
 import logging
-from datetime import datetime
 from zoneinfo import ZoneInfo
 
 from apscheduler.schedulers.background import BackgroundScheduler
@@ -41,9 +40,6 @@ def init_scheduler(app):
     api_key = app.config["DIGITRANSIT_API_KEY"]
     feed_id = app.config["FEED_ID"]
     db_path = app.config["DATABASE_PATH"]
-    interval = app.config["POLL_INTERVAL_SECONDS"]
-    start_hour = app.config["POLL_START_HOUR"]
-    end_hour = app.config["POLL_END_HOUR"]
     if not api_key:
         logger.warning("DIGITRANSIT_API_KEY not set — scheduler disabled")
         return
@@ -99,35 +95,21 @@ def init_scheduler(app):
         misfire_grace_time=3600,
     )
 
-    # Realtime polling with hour guard — all stops
-    def _guarded_poll():
-        now = datetime.now(HELSINKI_TZ)
+    # Realtime polling every 10 minutes at :09, :19, :29, ... :59
+    def _realtime_poll():
         logger.debug(
-            "Scheduler run starting: realtime_poll feed=%s now=%s window=%02d:00-%02d:00",
+            "Scheduler run starting: realtime_poll feed=%s",
             feed_id,
-            now.isoformat(),
-            start_hour,
-            end_hour,
         )
-        if start_hour <= now.hour < end_hour:
-            result = poll_realtime_once(db_path, api_url, api_key, feed_id=feed_id)
-            logger.debug("Scheduler run finished: realtime_poll result=%s", result)
-            return
-
-        logger.debug(
-            "Scheduler run skipped: realtime_poll outside active hours"
-            " now_hour=%02d window=%02d-%02d",
-            now.hour,
-            start_hour,
-            end_hour,
-        )
+        result = poll_realtime_once(db_path, api_url, api_key, feed_id=feed_id)
+        logger.debug("Scheduler run finished: realtime_poll result=%s", result)
 
     _scheduler.add_job(
-        _guarded_poll,
-        "interval",
-        seconds=interval,
+        _realtime_poll,
+        "cron",
+        minute="9,19,29,39,49,59",
         id="realtime_poll",
-        misfire_grace_time=interval,
+        misfire_grace_time=600,
     )
 
     _scheduler.start()
@@ -136,10 +118,8 @@ def init_scheduler(app):
     _scheduler.add_job(_discover, id="discover_startup", misfire_grace_time=60)
 
     logger.info(
-        "Scheduler: discover weekly, daily@03:00+23:00, realtime every %ds (%d:00–%d:00) feed=%s",
-        interval,
-        start_hour,
-        end_hour,
+        "Scheduler: discover weekly, daily@03:00+23:00,"
+        " realtime every 10min around the clock, feed=%s",
         feed_id,
     )
 
