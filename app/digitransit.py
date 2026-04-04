@@ -1,3 +1,4 @@
+import json
 import logging
 import time
 from datetime import date, datetime
@@ -93,6 +94,65 @@ QUERY_STOPS_BY_RADIUS = """
 }
 """
 
+QUERY_BULK_DAILY = """
+{
+  stops(ids: %s) {
+    gtfsId
+    name
+    code
+    lat
+    lon
+    stoptimesForServiceDate(date: "%s") {
+      pattern {
+        route { shortName longName mode }
+        directionId
+      }
+      stoptimes {
+        scheduledArrival
+        scheduledDeparture
+        realtimeArrival
+        realtimeDeparture
+        arrivalDelay
+        departureDelay
+        realtime
+        realtimeState
+        headsign
+        trip { gtfsId }
+      }
+    }
+  }
+}
+"""
+
+QUERY_BULK_REALTIME = """
+{
+  stops(ids: %s) {
+    gtfsId
+    name
+    stoptimesWithoutPatterns(
+      startTime: %d,
+      timeRange: 7200,
+      numberOfDepartures: 50
+    ) {
+      serviceDay
+      scheduledArrival
+      realtimeArrival
+      arrivalDelay
+      scheduledDeparture
+      realtimeDeparture
+      departureDelay
+      realtime
+      realtimeState
+      headsign
+      trip {
+        gtfsId
+        route { shortName longName }
+      }
+    }
+  }
+}
+"""
+
 QUERY_FEED_ROUTES = """
 {
   routes {
@@ -127,14 +187,21 @@ class DigitransitClient:
             }
         )
 
-    def _query(self, graphql: str, retries: int = 1) -> dict:
+    def _query(self, graphql: str, retries: int = 1, timeout: int = 30) -> dict:
         for attempt in range(retries + 1):
             try:
                 resp = self.session.post(
                     self.api_url,
                     json={"query": graphql},
-                    timeout=30,
+                    timeout=timeout,
                 )
+                if resp.status_code != 200:
+                    logger.warning(
+                        "API %d (attempt %d): %s",
+                        resp.status_code,
+                        attempt + 1,
+                        resp.text[:500],
+                    )
                 resp.raise_for_status()
                 data = resp.json()
                 if "errors" in data:
@@ -167,6 +234,33 @@ class DigitransitClient:
         data = self._query(QUERY_STOPS_BY_RADIUS % (lat, lon, radius))
         edges = data.get("stopsByRadius", {}).get("edges", [])
         return [{**edge["node"]["stop"], "distance": edge["node"]["distance"]} for edge in edges]
+
+    def fetch_bulk_daily(
+        self, stop_ids: list[str], service_date: date | None = None
+    ) -> list[dict]:
+        """Fetch daily schedules for all stops in a single query."""
+        if service_date is None:
+            service_date = datetime.now(HELSINKI_TZ).date()
+        ids_json = json.dumps(stop_ids)
+        data = self._query(
+            QUERY_BULK_DAILY % (ids_json, service_date.isoformat()),
+            retries=2,
+            timeout=120,
+        )
+        return data.get("stops", [])
+
+    def fetch_bulk_realtime(self, stop_ids: list[str]) -> list[dict]:
+        """Fetch realtime data for all stops in a single query."""
+        import json
+
+        now_utc = int(time.time())
+        ids_json = json.dumps(stop_ids)
+        data = self._query(
+            QUERY_BULK_REALTIME % (ids_json, now_utc),
+            retries=2,
+            timeout=120,
+        )
+        return data.get("stops", [])
 
     def discover_feed_stops(self, feed_id: str) -> tuple[list[dict], list[dict]]:
         """Discover all stops and routes for a feed (e.g. 'Vaasa').

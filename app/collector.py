@@ -50,39 +50,16 @@ def discover_stops(db_path: str, api_url: str, api_key: str, feed_id: str) -> di
         return {"status": "error", "message": str(e)}
 
 
-def collect_daily_single(
-    client: DigitransitClient,
-    db,
-    stop_id: str,
-    target_date: str,
-    now: int,
-) -> int:
-    """Collect daily schedule for a single stop. Returns number of departures."""
-    stop_data = client.fetch_daily_schedule(stop_id, date.fromisoformat(target_date))
+def _process_daily_stop(stop_data: dict, target_date: str, now: int) -> tuple[dict, list]:
+    """Extract trips and observations from a single stop's daily data.
 
-    if stop_data is None:
-        return 0
-
-    # Upsert stop info
-    upsert_stop(
-        db,
-        stop_data["gtfsId"],
-        stop_data["name"],
-        stop_data.get("code"),
-        stop_data.get("lat"),
-        stop_data.get("lon"),
-    )
-
-    # Check for no-service day
-    patterns = stop_data.get("stoptimesForServiceDate", [])
-    all_empty = all(len(p.get("stoptimes", [])) == 0 for p in patterns)
-    if all_empty:
-        return 0
-
-    # Build trip and observation rows
+    Returns (trips_dict, observations_list).
+    """
     trips = {}
     observations = []
-    for pattern_data in patterns:
+    stop_id = stop_data["gtfsId"]
+
+    for pattern_data in stop_data.get("stoptimesForServiceDate", []):
         route = pattern_data["pattern"]["route"]
         direction_id = pattern_data["pattern"].get("directionId")
 
@@ -113,11 +90,7 @@ def collect_daily_single(
                 }
             )
 
-    if trips:
-        upsert_trips_batch(db, list(trips.values()))
-    if observations:
-        upsert_observations_batch(db, observations)
-    return len(observations)
+    return trips, observations
 
 
 def collect_daily(
@@ -127,9 +100,8 @@ def collect_daily(
     stop_id: str | None = None,
     service_date: str | None = None,
     feed_id: str | None = None,
-    rate_limit_delay: float = 0.1,
 ) -> dict:
-    """Fetch full day schedule for one or all stops. Returns status dict."""
+    """Fetch full day schedule for one or all stops in a single API call."""
     client = DigitransitClient(api_url, api_key)
     db = connect_direct(db_path)
     now = int(time.time())
@@ -139,53 +111,72 @@ def collect_daily(
         target_date = datetime.now(HELSINKI_TZ).strftime("%Y-%m-%d")
 
     try:
+        # Determine which stop IDs to fetch
         if stop_id:
-            # Single stop mode
-            count = collect_daily_single(client, db, stop_id, target_date, now)
-            log_collection(db, stop_id, "daily", target_date, departures_found=count)
-            db.close()
-            if count == 0:
-                return {
-                    "status": "no_service",
-                    "date": target_date,
-                    "message": f"No service on {target_date}",
-                }
-            return {"status": "ok", "date": target_date, "departures": count}
+            query_ids = [stop_id]
+        else:
+            query_ids = get_all_stop_ids(db, feed_id)
+            if not query_ids:
+                db.close()
+                discover_stops(db_path, api_url, api_key, feed_id or "Vaasa")
+                db = connect_direct(db_path)
+                query_ids = get_all_stop_ids(db, feed_id)
 
-        # All-stops mode
-        stop_ids = get_all_stop_ids(db, feed_id)
-        if not stop_ids:
-            # No stops yet — discover them first
-            db.close()
-            discover_stops(db_path, api_url, api_key, feed_id or "Vaasa")
-            db = connect_direct(db_path)
-            stop_ids = get_all_stop_ids(db, feed_id)
+        # Single bulk API call
+        stops_data = client.fetch_bulk_daily(query_ids, date.fromisoformat(target_date))
 
-        total = 0
+        all_trips = {}
+        all_observations = []
         stops_with_service = 0
-        for i, sid in enumerate(stop_ids):
-            count = collect_daily_single(client, db, sid, target_date, now)
-            total += count
-            if count > 0:
-                stops_with_service += 1
-            if rate_limit_delay > 0 and i < len(stop_ids) - 1:
-                time.sleep(rate_limit_delay)
 
-        log_collection(db, feed_id or "all", "daily", target_date, departures_found=total)
+        for stop_data in stops_data:
+            # Upsert stop info
+            upsert_stop(
+                db,
+                stop_data["gtfsId"],
+                stop_data["name"],
+                stop_data.get("code"),
+                stop_data.get("lat"),
+                stop_data.get("lon"),
+            )
+
+            trips, observations = _process_daily_stop(stop_data, target_date, now)
+            all_trips.update(trips)
+            all_observations.extend(observations)
+            if observations:
+                stops_with_service += 1
+
+        if all_trips:
+            upsert_trips_batch(db, list(all_trips.values()))
+        if all_observations:
+            upsert_observations_batch(db, all_observations)
+
+        log_collection(
+            db, stop_id or feed_id or "all", "daily", target_date,
+            departures_found=len(all_observations),
+        )
         logger.info(
-            "Daily collection: %d departures across %d/%d stops for %s",
-            total,
+            "Daily collection: %d departures across %d/%d stops for %s (1 API call)",
+            len(all_observations),
             stops_with_service,
-            len(stop_ids),
+            len(stops_data),
             target_date,
         )
         db.close()
+
+        if stop_id and len(all_observations) == 0:
+            return {
+                "status": "no_service",
+                "date": target_date,
+                "message": f"No service on {target_date}",
+            }
+
         return {
             "status": "ok",
             "date": target_date,
-            "departures": total,
+            "departures": len(all_observations),
             "stops_with_service": stops_with_service,
-            "total_stops": len(stop_ids),
+            "total_stops": len(stops_data),
         }
 
     except Exception as e:
@@ -195,114 +186,104 @@ def collect_daily(
         return {"status": "error", "message": str(e)}
 
 
-def poll_realtime_single(client: DigitransitClient, db, stop_id: str, now: int) -> int:
-    """Poll realtime for a single stop. Returns number of observations updated."""
-    stop_data = client.fetch_realtime(stop_id)
-    if stop_data is None:
-        return 0
-
-    stoptimes = stop_data.get("stoptimesWithoutPatterns", [])
-    if not stoptimes:
-        return 0
-
-    trips = {}
-    observations = []
-    for st in stoptimes:
-        trip = st["trip"]
-        trip_id = trip["gtfsId"]
-        route = trip.get("route", {})
-        service_day = st.get("serviceDay")
-        service_date = _service_day_to_date(service_day) if service_day else None
-
-        if service_date is None:
-            continue
-
-        trips[trip_id] = {
-            "gtfs_id": trip_id,
-            "route_short_name": route.get("shortName"),
-            "route_long_name": route.get("longName"),
-            "mode": None,
-            "headsign": st.get("headsign"),
-            "direction_id": None,
-        }
-        observations.append(
-            {
-                "stop_gtfs_id": stop_id,
-                "trip_gtfs_id": trip_id,
-                "service_date": service_date,
-                "scheduled_arrival": st.get("scheduledArrival"),
-                "scheduled_departure": st["scheduledDeparture"],
-                "realtime_arrival": st.get("realtimeArrival"),
-                "realtime_departure": st.get("realtimeDeparture"),
-                "arrival_delay": st.get("arrivalDelay", 0),
-                "departure_delay": st.get("departureDelay", 0),
-                "realtime": 1 if st.get("realtime") else 0,
-                "realtime_state": st.get("realtimeState"),
-                "queried_at": now,
-            }
-        )
-
-    if trips:
-        upsert_trips_batch(db, list(trips.values()))
-    if observations:
-        upsert_observations_batch(db, observations)
-    return len(observations)
-
-
 def poll_realtime_once(
     db_path: str,
     api_url: str,
     api_key: str,
     stop_id: str | None = None,
     feed_id: str | None = None,
-    rate_limit_delay: float = 0.1,
 ) -> dict:
-    """Single realtime poll for one or all stops."""
+    """Single realtime poll for one or all stops in a single API call."""
     client = DigitransitClient(api_url, api_key)
     db = connect_direct(db_path)
     now = int(time.time())
 
     try:
+        # Determine which stop IDs to fetch
         if stop_id:
-            # Single stop mode
-            count = poll_realtime_single(client, db, stop_id, now)
-            log_collection(db, stop_id, "realtime", departures_found=count)
-            db.close()
-            return {"status": "ok", "updated": count}
+            query_ids = [stop_id]
+        else:
+            query_ids = get_all_stop_ids(db, feed_id)
+            if not query_ids:
+                db.close()
+                return {
+                    "status": "ok",
+                    "updated": 0,
+                    "message": "No stops discovered yet. Run daily collection first.",
+                }
 
-        # All-stops mode
-        stop_ids = get_all_stop_ids(db, feed_id)
-        if not stop_ids:
-            db.close()
-            return {
-                "status": "ok",
-                "updated": 0,
-                "message": "No stops discovered yet. Run daily collection first.",
-            }
+        # Single bulk API call
+        stops_data = client.fetch_bulk_realtime(query_ids)
 
-        total = 0
-        realtime_count = 0
-        for i, sid in enumerate(stop_ids):
-            count = poll_realtime_single(client, db, sid, now)
-            total += count
-            if count > 0:
-                realtime_count += 1
-            if rate_limit_delay > 0 and i < len(stop_ids) - 1:
-                time.sleep(rate_limit_delay)
+        all_trips = {}
+        all_observations = []
+        stops_with_data = 0
 
-        log_collection(db, feed_id or "all", "realtime", departures_found=total)
+        for stop_data in stops_data:
+            sid = stop_data["gtfsId"]
+            stoptimes = stop_data.get("stoptimesWithoutPatterns", [])
+            if not stoptimes:
+                continue
+
+            stop_has_data = False
+            for st in stoptimes:
+                trip = st["trip"]
+                trip_id = trip["gtfsId"]
+                route = trip.get("route", {})
+                service_day = st.get("serviceDay")
+                svc_date = _service_day_to_date(service_day) if service_day else None
+
+                if svc_date is None:
+                    continue
+
+                all_trips[trip_id] = {
+                    "gtfs_id": trip_id,
+                    "route_short_name": route.get("shortName"),
+                    "route_long_name": route.get("longName"),
+                    "mode": None,
+                    "headsign": st.get("headsign"),
+                    "direction_id": None,
+                }
+                all_observations.append(
+                    {
+                        "stop_gtfs_id": sid,
+                        "trip_gtfs_id": trip_id,
+                        "service_date": svc_date,
+                        "scheduled_arrival": st.get("scheduledArrival"),
+                        "scheduled_departure": st["scheduledDeparture"],
+                        "realtime_arrival": st.get("realtimeArrival"),
+                        "realtime_departure": st.get("realtimeDeparture"),
+                        "arrival_delay": st.get("arrivalDelay", 0),
+                        "departure_delay": st.get("departureDelay", 0),
+                        "realtime": 1 if st.get("realtime") else 0,
+                        "realtime_state": st.get("realtimeState"),
+                        "queried_at": now,
+                    }
+                )
+                stop_has_data = True
+
+            if stop_has_data:
+                stops_with_data += 1
+
+        if all_trips:
+            upsert_trips_batch(db, list(all_trips.values()))
+        if all_observations:
+            upsert_observations_batch(db, all_observations)
+
+        log_collection(db, stop_id or feed_id or "all", "realtime",
+                       departures_found=len(all_observations))
         logger.info(
-            "Realtime poll: %d departures across %d/%d stops",
-            total,
-            realtime_count,
-            len(stop_ids),
+            "Realtime poll: %d departures across %d/%d stops (1 API call)",
+            len(all_observations),
+            stops_with_data,
+            len(stops_data),
         )
         db.close()
         return {
             "status": "ok",
-            "updated": total,
-            "stops_polled": len(stop_ids),
-            "stops_with_data": realtime_count,
+            "updated": len(all_observations),
+            "stops_polled": len(stops_data),
+            "stops_with_data": stops_with_data,
         }
 
     except Exception as e:

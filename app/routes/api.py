@@ -1,6 +1,6 @@
 from flask import Blueprint, current_app, jsonify, request
 
-from app.analyzer import get_summary
+from app.analyzer import get_summary, parse_time
 from app.collector import collect_daily, discover_stops, poll_realtime_once
 from app.db import get_all_routes, get_all_stops, get_db, get_latest_collection, get_observations
 
@@ -16,7 +16,6 @@ def trigger_daily():
     api_url = current_app.config["DIGITRANSIT_API_URL"]
     db_path = current_app.config["DATABASE_PATH"]
     feed_id = current_app.config["FEED_ID"]
-    rate_limit = current_app.config["API_RATE_LIMIT_DELAY"]
 
     result = collect_daily(
         db_path,
@@ -25,7 +24,6 @@ def trigger_daily():
         stop_id=stop_id,
         service_date=date,
         feed_id=feed_id,
-        rate_limit_delay=rate_limit,
     )
     return jsonify(result)
 
@@ -38,7 +36,6 @@ def trigger_realtime():
     api_url = current_app.config["DIGITRANSIT_API_URL"]
     db_path = current_app.config["DATABASE_PATH"]
     feed_id = current_app.config["FEED_ID"]
-    rate_limit = current_app.config["API_RATE_LIMIT_DELAY"]
 
     result = poll_realtime_once(
         db_path,
@@ -46,7 +43,6 @@ def trigger_realtime():
         api_key,
         stop_id=stop_id,
         feed_id=feed_id,
-        rate_limit_delay=rate_limit,
     )
     return jsonify(result)
 
@@ -121,5 +117,7 @@ def summary():
     if not from_date or not to_date or not stop_id:
         return jsonify({"error": "stop_id, from, and to parameters required"}), 400
 
-    result = get_summary(db, stop_id, from_date, to_date, route)
+    time_from = parse_time(request.args.get("time_from"))
+    time_to = parse_time(request.args.get("time_to"))
+    result = get_summary(db, stop_id, from_date, to_date, route, time_from, time_to)
     return jsonify(result)

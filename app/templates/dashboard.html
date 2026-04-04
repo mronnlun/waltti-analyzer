@@ -8,8 +8,9 @@
 
 <!-- Controls -->
 <section class="controls">
-    <form method="get" action="/" class="date-form">
-        <label>Stop:
+    <form method="get" action="/" class="filter-form">
+        <div class="filter-row-stop">
+            <label>Stop:</label>
             <select name="stop_id" id="stop-select">
                 {% if all_stops %}
                     {% for s in all_stops %}
@@ -21,22 +22,23 @@
                     <option value="{{ stop_id }}">{{ stop_id }} (loading stops...)</option>
                 {% endif %}
             </select>
-        </label>
-        <label>From: <input type="date" name="from" value="{{ from_date }}"></label>
-        <label>To: <input type="date" name="to" value="{{ to_date }}"></label>
-        <label>Route:
-            <select name="route">
-                <option value="">All</option>
-                {% for r in stop_routes %}
-                <option value="{{ r }}" {% if r == route_filter %}selected{% endif %}>{{ r }}</option>
-                {% endfor %}
-            </select>
-        </label>
-        <button type="submit">Analyze</button>
+        </div>
+        <div class="filter-row-options">
+            <label>From: <input type="date" name="from" value="{{ from_date }}"></label>
+            <label>To: <input type="date" name="to" value="{{ to_date }}"></label>
+            <label>Route:
+                <select name="route">
+                    <option value="">All</option>
+                    {% for r in stop_routes %}
+                    <option value="{{ r }}" {% if r == route_filter %}selected{% endif %}>{{ r }}</option>
+                    {% endfor %}
+                </select>
+            </label>
+            <label>Time from: <input type="time" name="time_from" value="{{ time_from }}"></label>
+            <label>Time to: <input type="time" name="time_to" value="{{ time_to }}"></label>
+            <button type="submit">Analyze</button>
+        </div>
     </form>
-    <div class="actions">
-        <span id="action-status"></span>
-    </div>
 </section>
 
 {% if summary and summary.total_departures > 0 %}
@@ -48,36 +50,53 @@
     </div>
     <div class="card">
         <div class="card-value">{{ summary.on_time_pct }}%</div>
-        <div class="card-label">On Time (≤3min)</div>
+        <div class="card-label">On Time (0–3min)</div>
     </div>
     <div class="card">
-        <div class="card-value">{{ format_delay(summary.avg_delay_seconds) }}</div>
-        <div class="card-label">Avg Delay</div>
+        <div class="card-value">{{ format_delay(summary.avg_late_seconds) }}</div>
+        <div class="card-label">Avg Late</div>
+    </div>
+    <div class="card">
+        <div class="card-value">{{ format_delay(summary.avg_early_seconds) }}</div>
+        <div class="card-label">Avg Early</div>
     </div>
     <div class="card">
         <div class="card-value">{{ summary.with_realtime_pct }}%</div>
-        <div class="card-label">Realtime Coverage</div>
+        <div class="card-label">GPS Tracking</div>
     </div>
 </section>
 
 <!-- Timeliness Breakdown -->
 <section class="stats-section">
     <h2>Timeliness Breakdown</h2>
-    <p>Based on {{ summary.with_realtime }} departures with realtime data ({{ summary.service_days }} service days)</p>
+    <p>Based on {{ summary.with_realtime }} of {{ summary.total_departures }} departures with GPS data ({{ summary.service_days }} service days)</p>
     <table>
-        <tr><td>On time (≤3 min)</td><td>{{ summary.on_time }} ({{ summary.on_time_pct }}%)</td></tr>
+        <tr><td>On time (0–3 min)</td><td>{{ summary.on_time }} ({{ summary.on_time_pct }}%)</td></tr>
         <tr><td>Slightly late (3–10 min)</td><td>{{ summary.slightly_late }}</td></tr>
         <tr><td>Very late (>10 min)</td><td>{{ summary.very_late }}</td></tr>
-        <tr><td>Early (<0)</td><td>{{ summary.early }}</td></tr>
+        <tr><td>Slightly early (up to 1 min)</td><td>{{ summary.slightly_early }}</td></tr>
+        <tr><td>Very early (>1 min)</td><td>{{ summary.very_early }}</td></tr>
         <tr><td>Canceled</td><td>{{ summary.canceled }}</td></tr>
+        {% if summary.suspect_gps > 0 %}
+        <tr><td>Suspect GPS (>30 min, excluded)</td><td>{{ summary.suspect_gps }}</td></tr>
+        {% endif %}
     </table>
-    <p>Median delay: {{ format_delay(summary.median_delay_seconds) }} ·
-       Max delay: {{ format_delay(summary.max_delay_seconds) }}</p>
+    <p>
+        Late: avg {{ format_delay(summary.avg_late_seconds) }}, worst {{ format_delay(summary.max_late_seconds) }} ·
+        Early: avg {{ format_delay(summary.avg_early_seconds) }}, worst {{ format_delay(summary.max_early_seconds) }}
+    </p>
+
+    {% if summary.suspect_gps > 0 %}
+    <div class="warning">
+        {{ summary.suspect_gps }} departure(s) had deviations over 30 minutes, likely caused by
+        incorrect GPS-to-trip matching in Digitransit. These are excluded from all statistics.
+    </div>
+    {% endif %}
 
     {% if summary.with_realtime_pct < 70 %}
     <div class="warning">
-        Only {{ summary.with_realtime_pct }}% of observations have realtime data.
-        The scheduler must be running during service hours to capture delay data.
+        Only {{ summary.with_realtime_pct }}% of departures have GPS data.
+        Buses without GPS tracking cannot report actual arrival times, so their punctuality is unknown.
     </div>
     {% endif %}
 </section>
@@ -86,15 +105,19 @@
 {% if routes_breakdown %}
 <section class="stats-section">
     <h2>Per-Route Breakdown</h2>
+    <div class="table-responsive">
     <table class="data-table">
         <thead>
             <tr>
                 <th>Route</th>
                 <th>Departures</th>
-                <th>Realtime</th>
+                <th>With GPS</th>
                 <th>On-time %</th>
-                <th>Avg Delay</th>
-                <th>Max Delay</th>
+                <th>Avg Late</th>
+                <th>Worst Late</th>
+                <th>Avg Early</th>
+                <th>Worst Early</th>
+                <th>Suspect</th>
             </tr>
         </thead>
         <tbody>
@@ -104,12 +127,16 @@
                 <td>{{ r.departures }}</td>
                 <td>{{ r.with_realtime }}</td>
                 <td>{{ r.on_time_pct }}%</td>
-                <td>{{ format_delay(r.avg_delay_seconds) }}</td>
-                <td>{{ format_delay(r.max_delay_seconds) }}</td>
+                <td>{{ format_delay(r.avg_late_seconds) }}</td>
+                <td>{{ format_delay(r.max_late_seconds) }}</td>
+                <td>{{ format_delay(r.avg_early_seconds) }}</td>
+                <td>{{ format_delay(r.max_early_seconds) }}</td>
+                <td>{{ r.suspect_gps if r.suspect_gps else "" }}</td>
             </tr>
             {% endfor %}
         </tbody>
     </table>
+    </div>
 </section>
 {% endif %}
 
@@ -139,6 +166,7 @@
 <section class="stats-section">
     <h2>Recent Observations{% if stop_id %} — {{ stop_id }}{% endif %}</h2>
     {% if recent %}
+    <div class="table-responsive">
     <table class="data-table">
         <thead>
             <tr>
@@ -146,23 +174,25 @@
                 <th>Route</th>
                 <th>Headsign</th>
                 <th>Scheduled</th>
-                <th>Delay</th>
-                <th>Realtime</th>
+                <th>Deviation</th>
+                <th>GPS</th>
             </tr>
         </thead>
         <tbody>
             {% for obs in recent %}
-            <tr>
+            {% set suspect = obs.realtime and obs.departure_delay is not none and (obs.departure_delay > 1800 or obs.departure_delay < -1800) %}
+            <tr{% if suspect %} class="suspect-row"{% endif %}>
                 <td>{{ obs.service_date }}</td>
                 <td>{{ obs.route_short_name }}</td>
                 <td>{{ obs.headsign }}</td>
                 <td>{{ "%02d:%02d"|format(obs.scheduled_departure // 3600, (obs.scheduled_departure % 3600) // 60) }}</td>
-                <td>{{ format_delay(obs.departure_delay) }}</td>
-                <td>{{ "✓" if obs.realtime else "—" }}</td>
+                <td>{{ format_delay(obs.departure_delay) }}{% if suspect %} ⚠{% endif %}</td>
+                <td>{{ "✓" if obs.realtime else "No GPS" }}</td>
             </tr>
             {% endfor %}
         </tbody>
     </table>
+    </div>
     {% else %}
     <p>No observations yet for this stop.</p>
     {% endif %}
@@ -173,28 +203,38 @@
 <script>
 const currentStopId = document.getElementById('stop-select')?.value || '';
 
+new TomSelect('#stop-select', {
+    sortField: { field: 'text', direction: 'asc' },
+    allowEmptyOption: false,
+});
+
 {% if hourly_delays %}
 const ctx = document.getElementById('hourlyChart').getContext('2d');
 new Chart(ctx, {
     type: 'bar',
     data: {
         labels: {{ hourly_delays | map(attribute='hour') | list | tojson }},
-        datasets: [{
-            label: 'Avg Delay (seconds)',
-            data: {{ hourly_delays | map(attribute='avg_delay_seconds') | list | tojson }},
-            backgroundColor: {{ hourly_delays | map(attribute='avg_delay_seconds') | list | tojson }}.map(
-                v => v > 180 ? '#e74c3c' : v > 60 ? '#f39c12' : '#27ae60'
-            ),
-        }]
+        datasets: [
+            {
+                label: 'Avg Late (min)',
+                data: {{ hourly_delays | map(attribute='avg_late_seconds') | list | tojson }}.map(v => +(v / 60).toFixed(1)),
+                backgroundColor: '#e74c3c',
+            },
+            {
+                label: 'Avg Early (min)',
+                data: {{ hourly_delays | map(attribute='avg_early_seconds') | list | tojson }}.map(v => +(Math.abs(v) / 60).toFixed(1)),
+                backgroundColor: '#3498db',
+            }
+        ]
     },
     options: {
         responsive: true,
         scales: {
             x: { title: { display: true, text: 'Hour of Day' } },
-            y: { title: { display: true, text: 'Average Delay (seconds)' }, beginAtZero: true }
+            y: { title: { display: true, text: 'Minutes' }, beginAtZero: true }
         },
         plugins: {
-            legend: { display: false }
+            legend: { display: true }
         }
     }
 });

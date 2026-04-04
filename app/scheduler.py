@@ -46,8 +46,6 @@ def init_scheduler(app):
     interval = app.config["POLL_INTERVAL_SECONDS"]
     start_hour = app.config["POLL_START_HOUR"]
     end_hour = app.config["POLL_END_HOUR"]
-    rate_limit = app.config["API_RATE_LIMIT_DELAY"]
-
     if not api_key:
         logger.warning("DIGITRANSIT_API_KEY not set — scheduler disabled")
         return
@@ -73,16 +71,14 @@ def init_scheduler(app):
     # Daily collection at 03:00 Helsinki time — all stops
     def _daily():
         logger.debug(
-            "Scheduler run starting: daily_collection feed=%s rate_limit=%s",
+            "Scheduler run starting: daily_collection feed=%s",
             feed_id,
-            rate_limit,
         )
         result = collect_daily(
             db_path,
             api_url,
             api_key,
             feed_id=feed_id,
-            rate_limit_delay=rate_limit,
         )
         logger.debug("Scheduler run finished: daily_collection result=%s", result)
 
@@ -92,6 +88,16 @@ def init_scheduler(app):
         hour=3,
         minute=0,
         id="daily_collection",
+        misfire_grace_time=3600,
+    )
+
+    # Evening collection at 23:00 — captures accumulated realtime delay data
+    _scheduler.add_job(
+        _daily,
+        "cron",
+        hour=23,
+        minute=0,
+        id="evening_collection",
         misfire_grace_time=3600,
     )
 
@@ -107,7 +113,7 @@ def init_scheduler(app):
         )
         if start_hour <= now.hour < end_hour:
             result = poll_realtime_once(
-                db_path, api_url, api_key, feed_id=feed_id, rate_limit_delay=rate_limit
+                db_path, api_url, api_key, feed_id=feed_id
             )
             logger.debug("Scheduler run finished: realtime_poll result=%s", result)
             return
@@ -133,7 +139,7 @@ def init_scheduler(app):
     _scheduler.add_job(_discover, id="discover_startup", misfire_grace_time=60)
 
     logger.info(
-        "Scheduler: discover weekly, daily@03:00, realtime every %ds (%d:00–%d:00) feed=%s",
+        "Scheduler: discover weekly, daily@03:00+23:00, realtime every %ds (%d:00–%d:00) feed=%s",
         interval,
         start_hour,
         end_hour,

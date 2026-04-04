@@ -2,7 +2,7 @@ import pytest
 
 from app import create_app
 from app.config import TestConfig
-from app.db import get_db
+from app.db import get_db, upsert_stop
 
 
 @pytest.fixture
@@ -13,7 +13,6 @@ def app(tmp_path):
         DATABASE_PATH = db_path
         FEED_ID = "Vaasa"
         DEFAULT_STOP_ID = "Vaasa:309392"
-        API_RATE_LIMIT_DELAY = 0.0
 
     app = create_app(_TestConfig)
     yield app
@@ -27,4 +26,7 @@ def client(app):
 @pytest.fixture
 def db(app):
     with app.app_context():
-        yield get_db()
+        conn = get_db()
+        # Seed default test stop so observation FK lookups succeed
+        upsert_stop(conn, "Vaasa:309392", "Gerbynmäentie", None, 63.14, 21.57)
+        yield conn

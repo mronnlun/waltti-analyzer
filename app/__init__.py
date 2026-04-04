@@ -22,8 +22,10 @@ def create_app(config_class=None):
     app.register_blueprint(api_bp, url_prefix="/api")
 
     if not app.config.get("TESTING"):
-        from app.scheduler import init_scheduler
+        # Avoid double scheduler when Flask reloader spawns two processes
+        if os.environ.get("WERKZEUG_RUN_MAIN") == "true" or not app.debug:
+            from app.scheduler import init_scheduler
 
-        init_scheduler(app)
+            init_scheduler(app)
 
     return app

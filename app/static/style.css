@@ -76,18 +76,44 @@ h2 {
     box-shadow: 0 1px 3px rgba(0,0,0,0.1);
 }
 
-.date-form {
+.filter-form {
+    display: flex;
+    flex-direction: column;
+    gap: 0.8rem;
+    width: 100%;
+}
+
+.filter-row-stop {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.filter-row-stop label {
+    font-size: 0.9rem;
+    flex-shrink: 0;
+}
+
+.filter-row-stop select,
+.filter-row-stop .ts-wrapper {
+    flex: 1;
+}
+
+.filter-row-options {
     display: flex;
     flex-wrap: wrap;
     gap: 0.5rem;
     align-items: center;
 }
 
-.date-form label {
+.filter-row-options label {
     font-size: 0.9rem;
+    display: flex;
+    align-items: center;
+    gap: 0.3rem;
 }
 
-.date-form input {
+.filter-row-options input {
     padding: 0.4rem;
     border: 1px solid #ddd;
     border-radius: 4px;
@@ -167,8 +193,14 @@ button:hover {
 }
 
 /* Data tables */
+.table-responsive {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+}
+
 .data-table {
     border-collapse: collapse;
+    white-space: nowrap;
 }
 
 .data-table thead {
@@ -188,6 +220,11 @@ button:hover {
 
 .data-table tbody tr:hover {
     background: #eef2f7;
+}
+
+/* Suspect GPS data */
+.suspect-row {
+    opacity: 0.5;
 }
 
 /* Chart */

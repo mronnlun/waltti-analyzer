@@ -2,6 +2,8 @@
 
 A web application that collects and analyzes the punctuality of buses at stops in Vaasa, Finland. It polls the [Digitransit Waltti GraphQL API](https://digitransit.fi/en/developers/) during service hours, stores timetable and realtime delay data in SQLite, and displays timeliness reports in a dashboard.
 
+The current direction is feed-wide coverage for Vaasa: discover the full stop network, seed daily schedules, and capture realtime outcomes while buses are running. The default stop is only a convenient UI starting point.
+
 ## Why a scheduler?
 
 The Digitransit API is a live-data API — realtime delay values only exist while buses are actively running. Once a service day passes, everything reverts to static schedule data. The app must actively poll during service hours to capture actual delay values before they disappear.
@@ -43,9 +45,10 @@ The dashboard is available at `http://localhost:5000` (dev) or `http://localhost
 
 ## How it works
 
-1. **Daily collection** (automatic at 03:00): Fetches the full day's scheduled timetable from the API and stores it in the database.
-2. **Realtime polling** (automatic every 30s during service hours): Captures actual bus delays as buses run, updating the stored schedule data with real delay values.
-3. **Dashboard**: Displays summary statistics, delay charts by hour, per-route breakdowns, and recent observations.
+1. **Stop discovery**: Finds the stops and routes in the configured feed so collection can cover the network instead of a single manually entered stop.
+2. **Daily collection** (automatic at 03:00): Fetches the full day's scheduled timetable from the API and stores it in the database.
+3. **Realtime polling** (automatic during service hours): Captures actual bus delays as buses run, updating the stored schedule data with real delay values before they disappear from the API.
+4. **Dashboard**: Displays summary statistics, delay charts by hour, per-route breakdowns, and recent observations.
 
 You can also trigger collection manually from the dashboard or via the JSON API.
 
@@ -54,11 +57,14 @@ You can also trigger collection manually from the dashboard or via the JSON API.
 | Variable | Default | Description |
 |---|---|---|
 | `DIGITRANSIT_API_KEY` | *(required)* | API key from portal-api.digitransit.fi |
-| `TARGET_STOP_ID` | `Vaasa:309392` | GTFS stop ID to monitor |
+| `FEED_ID` | `Vaasa` | Feed prefix used for stop discovery and collection |
+| `DEFAULT_STOP_ID` | `Vaasa:309392` | Default GTFS stop ID to show first in the UI |
 | `DATABASE_PATH` | `data/waltti.db` | Path to SQLite database file |
-| `POLL_INTERVAL_SECONDS` | `30` | Seconds between realtime polls |
+| `POLL_INTERVAL_SECONDS` | `300` | Seconds between realtime polls |
 | `POLL_START_HOUR` | `5` | Hour (Helsinki time) to start polling |
 | `POLL_END_HOUR` | `24` | Hour (Helsinki time) to stop polling |
+
+Some older deployment files still refer to `TARGET_STOP_ID`. The Python application uses `DEFAULT_STOP_ID`.
 
 ## Deployment
 
@@ -90,6 +96,6 @@ docker run -p 8000:8000 -e DIGITRANSIT_API_KEY=your_key -v waltti-data:/app/data
 
 ## Notes
 
-- The default stop (Vaasa:309392, Gerbynmäentie / Yttergårdinpolku) serves routes 3 and 9 with ~20 weekday departures.
+- The default stop (Vaasa:309392, Gerbynmäentie / Yttergårdinpolku) is useful for local testing, but the intended collection scope is the whole Vaasa feed.
 - Public holidays (e.g. Good Friday) have no bus service — the app detects this and logs it.
 - Helsinki timezone is UTC+2 in winter, UTC+3 in summer. DST changes are handled automatically.

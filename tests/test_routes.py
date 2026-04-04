@@ -1,7 +1,7 @@
 import time
 from unittest.mock import patch
 
-from app.db import upsert_observations_batch, upsert_trips_batch
+from app.db import upsert_observations_batch, upsert_stop, upsert_trips_batch
 
 
 def test_dashboard_loads(client):

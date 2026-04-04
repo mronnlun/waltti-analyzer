@@ -1,10 +1,15 @@
 # Waltti Analyzer — AI Instructions
 
+Read [docs/AI_DOCUMENTATION_CONTEXT.md](docs/AI_DOCUMENTATION_CONTEXT.md) before substantial work.
+When project direction changes, update existing documentation in the same change instead of creating parallel docs that drift.
+
 ## Project Overview
 
 A Flask web application that collects and analyzes the punctuality of buses at stops in Vaasa, Finland. It polls the Digitransit Waltti GraphQL API, stores timetable and realtime delay data in SQLite, and displays timeliness reports in a web dashboard.
 
 The Digitransit API does **not** retain historical delay data. Realtime delay values are only available while buses are actively running. Once a service day passes, the API reverts to static schedule data. This means the application **must** actively poll during service hours to capture delay data before it disappears.
+
+The current direction is feed-wide coverage for Vaasa. A default stop may still be used in the UI, but collection and reporting should be designed around all discovered stops and routes.
 
 ## Tech Stack
 
@@ -42,7 +47,7 @@ app/
 - SQLite connections via `flask.g` in request context; direct `sqlite3.connect()` in scheduler
 - All times stored in DB as UTC unix timestamps or seconds-since-midnight (as from API)
 - All display output uses Europe/Helsinki timezone
-- Use `INSERT OR REPLACE` for upserts keyed on `(stop_gtfs_id, trip_gtfs_id, service_date)`
+- The current code uses upserts keyed on `(stop_gtfs_id, trip_gtfs_id, service_date)`; preserve the meaning of the best known observation when changing collector behavior
 - Run `ruff check` and `ruff format` before committing
 - Tests use `pytest` with `TestConfig` (in-memory SQLite)
 
@@ -61,11 +66,14 @@ app/
 | Variable | Default | Required |
 |---|---|---|
 | `DIGITRANSIT_API_KEY` | — | Yes |
-| `TARGET_STOP_ID` | `Vaasa:309392` | No |
+| `FEED_ID` | `Vaasa` | No |
+| `DEFAULT_STOP_ID` | `Vaasa:309392` | No |
 | `DATABASE_PATH` | `data/waltti.db` | No |
-| `POLL_INTERVAL_SECONDS` | `30` | No |
+| `POLL_INTERVAL_SECONDS` | `300` | No |
 | `POLL_START_HOUR` | `5` | No |
 | `POLL_END_HOUR` | `24` | No |
+
+Some older deployment-facing files still refer to `TARGET_STOP_ID`; prefer `DEFAULT_STOP_ID` in Python app code and update stale references when you touch them.
 
 ## Running Locally
 
@@ -87,7 +95,7 @@ ruff check .
 
 ## Database Schema
 
-Three tables: `stops`, `observations`, `collection_log`. See `app/db.py` for full DDL.
+Four tables: `stops`, `trips`, `observations`, `collection_log`. See `app/db.py` for full DDL.
 The `observations` table has a `UNIQUE(stop_gtfs_id, trip_gtfs_id, service_date)` constraint for upserts.
 
 ## Important Edge Cases
