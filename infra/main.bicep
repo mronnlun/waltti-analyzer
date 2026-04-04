@@ -1,7 +1,13 @@
 targetScope = 'resourceGroup'
 
-@description('Base name for all resources')
-param appName string = 'walttianalyzer'
+// Naming: ProjectName-env-resourcetype
+// ProjectName = PascalCase, no dashes; env and resourcetype = lowercase
+
+@description('Project name in PascalCase (no dashes)')
+param projectName string = 'WalttiAnalyzer'
+
+@description('Environment name (e.g. dev, test, prod)')
+param env string = 'prod'
 
 @description('Azure region for resources')
 param location string = resourceGroup().location
@@ -17,9 +23,19 @@ param targetStopId string = 'Vaasa:309392'
 @allowed(['F1', 'B1', 'B2', 'S1'])
 param skuName string = 'B1'
 
+@description('SQL admin login name')
+param sqlAdminLogin string = 'walttidbadmin'
+
+@description('SQL admin password')
+@secure()
+param sqlAdminPassword string
+
+// SQL Server names must be globally unique and lowercase
+var sqlServerName = toLower('${projectName}-${env}-sql')
+
 // --- App Service Plan ---
 resource appServicePlan 'Microsoft.Web/serverfarms@2023-12-01' = {
-  name: '${appName}-plan'
+  name: '${projectName}-${env}-plan'
   location: location
   kind: 'linux'
   sku: {
@@ -30,9 +46,45 @@ resource appServicePlan 'Microsoft.Web/serverfarms@2023-12-01' = {
   }
 }
 
+// --- Azure SQL Server ---
+resource sqlServer 'Microsoft.Sql/servers@2023-08-01-preview' = {
+  name: sqlServerName
+  location: location
+  properties: {
+    administratorLogin: sqlAdminLogin
+    administratorLoginPassword: sqlAdminPassword
+    version: '12.0'
+    minimalTlsVersion: '1.2'
+  }
+}
+
+// --- Allow Azure services to access SQL Server ---
+resource sqlFirewallAllowAzure 'Microsoft.Sql/servers/firewallRules@2023-08-01-preview' = {
+  parent: sqlServer
+  name: 'AllowAzureServices'
+  properties: {
+    startIpAddress: '0.0.0.0'
+    endIpAddress: '0.0.0.0'
+  }
+}
+
+// --- Azure SQL Database (Basic tier — 2 GB, ~$5/month) ---
+resource sqlDatabase 'Microsoft.Sql/servers/databases@2023-08-01-preview' = {
+  parent: sqlServer
+  name: '${projectName}-${env}-sqldb'
+  location: location
+  sku: {
+    name: 'Basic'
+    tier: 'Basic'
+  }
+  properties: {
+    maxSizeBytes: 2147483648 // 2 GB
+  }
+}
+
 // --- App Service ---
 resource webApp 'Microsoft.Web/sites@2023-12-01' = {
-  name: appName
+  name: '${projectName}-${env}-app'
   location: location
   properties: {
     serverFarmId: appServicePlan.id
@@ -40,7 +92,14 @@ resource webApp 'Microsoft.Web/sites@2023-12-01' = {
     siteConfig: {
       linuxFxVersion: 'PYTHON|3.12'
       appCommandLine: 'gunicorn --config gunicorn.conf.py "app:create_app()"'
-      alwaysOn: skuName != 'F1' // Always On not available on Free tier
+      alwaysOn: skuName != 'F1'
+      connectionStrings: [
+        {
+          name: 'DATABASE'
+          connectionString: 'Driver={ODBC Driver 18 for SQL Server};Server=tcp:${sqlServer.properties.fullyQualifiedDomainName},1433;Database=${sqlDatabase.name};Uid=${sqlAdminLogin};Pwd=${sqlAdminPassword};Encrypt=yes;TrustServerCertificate=no;Connection Timeout=30;'
+          type: 'SQLAzure'
+        }
+      ]
       appSettings: [
         {
           name: 'DIGITRANSIT_API_KEY'
@@ -51,8 +110,8 @@ resource webApp 'Microsoft.Web/sites@2023-12-01' = {
           value: targetStopId
         }
         {
-          name: 'DATABASE_PATH'
-          value: '/home/data/waltti.db'
+          name: 'DATABASE_URL'
+          value: 'mssql+pyodbc://${sqlAdminLogin}:${sqlAdminPassword}@${sqlServer.properties.fullyQualifiedDomainName}:1433/${sqlDatabase.name}?driver=ODBC+Driver+18+for+SQL+Server&Encrypt=yes&TrustServerCertificate=no&Connection+Timeout=30'
         }
         {
           name: 'SCM_DO_BUILD_DURING_DEPLOYMENT'
@@ -67,48 +126,8 @@ resource webApp 'Microsoft.Web/sites@2023-12-01' = {
   }
 }
 
-// --- Storage Account (for SQLite persistence via Azure Files) ---
-resource storageAccount 'Microsoft.Storage/storageAccounts@2023-05-01' = {
-  name: replace('${appName}stor', '-', '')
-  location: location
-  sku: {
-    name: 'Standard_LRS'
-  }
-  kind: 'StorageV2'
-  properties: {
-    minimumTlsVersion: 'TLS1_2'
-  }
-}
-
-resource fileService 'Microsoft.Storage/storageAccounts/fileServices@2023-05-01' = {
-  parent: storageAccount
-  name: 'default'
-}
-
-resource fileShare 'Microsoft.Storage/storageAccounts/fileServices/shares@2023-05-01' = {
-  parent: fileService
-  name: 'waltti-data'
-  properties: {
-    shareQuota: 1 // 1 GB — plenty for SQLite
-  }
-}
-
-// --- Mount Azure Files to App Service ---
-resource webAppStorageMount 'Microsoft.Web/sites/config@2023-12-01' = {
-  parent: webApp
-  name: 'azurestorageaccounts'
-  properties: {
-    walttidata: {
-      type: 'AzureFiles'
-      accountName: storageAccount.name
-      shareName: fileShare.name
-      mountPath: '/home/data'
-      accessKey: storageAccount.listKeys().keys[0].value
-    }
-  }
-}
-
 // --- Outputs ---
 output appUrl string = 'https://${webApp.properties.defaultHostName}'
 output appName string = webApp.name
+output sqlServerFqdn string = sqlServer.properties.fullyQualifiedDomainName
 output resourceGroupName string = resourceGroup().name

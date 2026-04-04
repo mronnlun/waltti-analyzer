@@ -34,9 +34,12 @@
                     {% endfor %}
                 </select>
             </label>
+            <button type="submit">Analyze</button>
+        </div>
+        <div class="filter-row-time">
             <label>Time from: <input type="time" name="time_from" value="{{ time_from }}"></label>
             <label>Time to: <input type="time" name="time_to" value="{{ time_to }}"></label>
-            <button type="submit">Analyze</button>
+            <span class="filter-hint" title="Visar bara avgångar mellan dessa två tider">?</span>
         </div>
     </form>
 </section>

@@ -10,8 +10,9 @@ permissions:
   contents: read
 
 env:
-  AZURE_RESOURCE_GROUP: waltti-analyzer-rg
-  AZURE_APP_NAME: waltti-analyzer
+  AZURE_PROJECT_NAME: WalttiAnalyzer
+  AZURE_ENV: prod
+  AZURE_RESOURCE_GROUP: WalttiAnalyzer-prod-rg
 
 jobs:
   test:
@@ -55,8 +56,10 @@ jobs:
           result=$(az deployment group create \
             --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
             --template-file infra/main.bicep \
-            --parameters appName=${{ env.AZURE_APP_NAME }} \
+            --parameters projectName=${{ env.AZURE_PROJECT_NAME }} \
+            --parameters env=${{ env.AZURE_ENV }} \
             --parameters digitransitApiKey=${{ secrets.DIGITRANSIT_API_KEY }} \
+            --parameters sqlAdminPassword=${{ secrets.SQL_ADMIN_PASSWORD }} \
             --parameters skuName=B1 \
             --query 'properties.outputs' -o json)
           echo "appName=$(echo $result | jq -r '.appName.value')" >> $GITHUB_OUTPUT
