@@ -152,7 +152,10 @@ def collect_daily(
             upsert_observations_batch(db, all_observations)
 
         log_collection(
-            db, stop_id or feed_id or "all", "daily", target_date,
+            db,
+            stop_id or feed_id or "all",
+            "daily",
+            target_date,
             departures_found=len(all_observations),
         )
         logger.info(
@@ -270,8 +273,9 @@ def poll_realtime_once(
         if all_observations:
             upsert_observations_batch(db, all_observations)
 
-        log_collection(db, stop_id or feed_id or "all", "realtime",
-                       departures_found=len(all_observations))
+        log_collection(
+            db, stop_id or feed_id or "all", "realtime", departures_found=len(all_observations)
+        )
         logger.info(
             "Realtime poll: %d departures across %d/%d stops (1 API call)",
             len(all_observations),

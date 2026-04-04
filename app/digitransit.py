@@ -235,9 +235,7 @@ class DigitransitClient:
         edges = data.get("stopsByRadius", {}).get("edges", [])
         return [{**edge["node"]["stop"], "distance": edge["node"]["distance"]} for edge in edges]
 
-    def fetch_bulk_daily(
-        self, stop_ids: list[str], service_date: date | None = None
-    ) -> list[dict]:
+    def fetch_bulk_daily(self, stop_ids: list[str], service_date: date | None = None) -> list[dict]:
         """Fetch daily schedules for all stops in a single query."""
         if service_date is None:
             service_date = datetime.now(HELSINKI_TZ).date()

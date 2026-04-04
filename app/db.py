@@ -164,9 +164,9 @@ def connect_direct(db_path: str) -> sqlite3.Connection:
 
 def _needs_migration(conn: sqlite3.Connection) -> bool:
     """Return True if the database has the old text-PK/FK schema."""
-    tables = [r[0] for r in conn.execute(
-        "SELECT name FROM sqlite_master WHERE type='table'"
-    ).fetchall()]
+    tables = [
+        r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
+    ]
     if "stops" not in tables:
         return False  # Fresh database
     cols = [r[1] for r in conn.execute("PRAGMA table_info(stops)").fetchall()]
@@ -359,7 +359,8 @@ def upsert_trip(db: sqlite3.Connection, **kwargs):
         """INSERT INTO trips
         (gtfs_id, route_short_name, route_long_name, mode, headsign, direction_id, updated_at)
         VALUES
-        (:gtfs_id, :route_short_name, :route_long_name, :mode, :headsign, :direction_id, :updated_at)
+        (:gtfs_id, :route_short_name, :route_long_name,
+         :mode, :headsign, :direction_id, :updated_at)
         ON CONFLICT(gtfs_id) DO UPDATE SET
             route_short_name = excluded.route_short_name,
             route_long_name = excluded.route_long_name,
@@ -377,7 +378,8 @@ def upsert_trips_batch(db: sqlite3.Connection, trips: list[dict]):
         """INSERT INTO trips
         (gtfs_id, route_short_name, route_long_name, mode, headsign, direction_id, updated_at)
         VALUES
-        (:gtfs_id, :route_short_name, :route_long_name, :mode, :headsign, :direction_id, :updated_at)
+        (:gtfs_id, :route_short_name, :route_long_name,
+         :mode, :headsign, :direction_id, :updated_at)
         ON CONFLICT(gtfs_id) DO UPDATE SET
             route_short_name = excluded.route_short_name,
             route_long_name = excluded.route_long_name,
@@ -420,8 +422,11 @@ def get_observations(
 
 
 def get_recent_observations(
-    db: sqlite3.Connection, stop_id: str, limit: int = 20,
-    now_seconds: int | None = None, route: str | None = None,
+    db: sqlite3.Connection,
+    stop_id: str,
+    limit: int = 20,
+    now_seconds: int | None = None,
+    route: str | None = None,
 ) -> list[sqlite3.Row]:
     """Return recent past observations. Excludes future departures for today."""
     from datetime import datetime

@@ -44,8 +44,12 @@ def index():
     hourly_delays = []
     if from_date and to_date and stop_id:
         summary = get_summary(db, stop_id, from_date, to_date, route, time_from, time_to)
-        routes_breakdown = get_route_breakdown(db, stop_id, from_date, to_date, route, time_from, time_to)
-        hourly_delays = get_delay_by_hour(db, stop_id, from_date, to_date, route, time_from, time_to)
+        routes_breakdown = get_route_breakdown(
+            db, stop_id, from_date, to_date, route, time_from, time_to
+        )
+        hourly_delays = get_delay_by_hour(
+            db, stop_id, from_date, to_date, route, time_from, time_to
+        )
 
     recent = get_recent_observations(db, stop_id, limit=20, route=route) if stop_id else []
 

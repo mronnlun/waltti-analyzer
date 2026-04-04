@@ -20,8 +20,9 @@ def parse_time(value: str | None) -> int | None:
         return None
 
 
-def _append_filters(query: str, params: list, route: str | None,
-                    time_from: int | None, time_to: int | None):
+def _append_filters(
+    query: str, params: list, route: str | None, time_from: int | None, time_to: int | None
+):
     """Append optional route and time-of-day filters to a query."""
     if route:
         query += " AND t.route_short_name = ?"
@@ -36,8 +37,13 @@ def _append_filters(query: str, params: list, route: str | None,
 
 
 def get_summary(
-    db: sqlite3.Connection, stop_id: str, start_date: str, end_date: str,
-    route: str | None = None, time_from: int | None = None, time_to: int | None = None,
+    db: sqlite3.Connection,
+    stop_id: str,
+    start_date: str,
+    end_date: str,
+    route: str | None = None,
+    time_from: int | None = None,
+    time_to: int | None = None,
 ) -> dict:
     """Compute summary statistics for a date range."""
     query = """SELECT o.departure_delay, o.realtime, o.service_date,
@@ -105,8 +111,13 @@ def get_summary(
 
 
 def get_route_breakdown(
-    db: sqlite3.Connection, stop_id: str, start_date: str, end_date: str,
-    route: str | None = None, time_from: int | None = None, time_to: int | None = None,
+    db: sqlite3.Connection,
+    stop_id: str,
+    start_date: str,
+    end_date: str,
+    route: str | None = None,
+    time_from: int | None = None,
+    time_to: int | None = None,
 ) -> list[dict]:
     """Per-route statistics."""
     query = """SELECT t.route_short_name, o.departure_delay, o.realtime
@@ -159,8 +170,13 @@ def get_route_breakdown(
 
 
 def get_delay_by_hour(
-    db: sqlite3.Connection, stop_id: str, start_date: str, end_date: str,
-    route: str | None = None, time_from: int | None = None, time_to: int | None = None,
+    db: sqlite3.Connection,
+    stop_id: str,
+    start_date: str,
+    end_date: str,
+    route: str | None = None,
+    time_from: int | None = None,
+    time_to: int | None = None,
 ) -> list[dict]:
     """Average delay by hour of day (based on scheduled departure)."""
     query = """SELECT

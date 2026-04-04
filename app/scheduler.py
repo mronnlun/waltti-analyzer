@@ -22,9 +22,7 @@ def _ensure_scheduler_debug_logging() -> None:
 
     handler = logging.StreamHandler()
     handler.setLevel(logging.DEBUG)
-    handler.setFormatter(
-        logging.Formatter("%(asctime)s %(levelname)s [%(name)s] %(message)s")
-    )
+    handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s [%(name)s] %(message)s"))
     logger.addHandler(handler)
     logger.setLevel(logging.DEBUG)
     logger.propagate = False
@@ -112,14 +110,13 @@ def init_scheduler(app):
             end_hour,
         )
         if start_hour <= now.hour < end_hour:
-            result = poll_realtime_once(
-                db_path, api_url, api_key, feed_id=feed_id
-            )
+            result = poll_realtime_once(db_path, api_url, api_key, feed_id=feed_id)
             logger.debug("Scheduler run finished: realtime_poll result=%s", result)
             return
 
         logger.debug(
-            "Scheduler run skipped: realtime_poll outside active hours now_hour=%02d window=%02d-%02d",
+            "Scheduler run skipped: realtime_poll outside active hours"
+            " now_hour=%02d window=%02d-%02d",
             now.hour,
             start_hour,
             end_hour,

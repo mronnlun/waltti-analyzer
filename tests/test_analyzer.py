@@ -1,6 +1,12 @@
 import time
 
-from app.analyzer import format_delay, get_delay_by_hour, get_route_breakdown, get_summary, parse_time
+from app.analyzer import (
+    format_delay,
+    get_delay_by_hour,
+    get_route_breakdown,
+    get_summary,
+    parse_time,
+)
 from app.db import upsert_observations_batch, upsert_trips_batch
 
 
@@ -56,7 +62,13 @@ def test_summary_with_data(db):
             {"trip_id": "trip2", "route": "3", "scheduled_dep": 25800, "delay": 120},
             {"trip_id": "trip3", "route": "3", "scheduled_dep": 27600, "delay": 300},
             {"trip_id": "trip4", "route": "9", "scheduled_dep": 29400, "delay": 0},
-            {"trip_id": "trip5", "route": "3", "scheduled_dep": 31200, "delay": 0, "realtime": False},
+            {
+                "trip_id": "trip5",
+                "route": "3",
+                "scheduled_dep": 31200,
+                "delay": 0,
+                "realtime": False,
+            },
         ],
     )
 
@@ -133,16 +145,24 @@ def test_summary_time_filter(db):
 
     # Filter to 16:04–16:06 (57840–57960 seconds) — only "target" matches
     summary = get_summary(
-        db, "Vaasa:309392", "2026-04-02", "2026-04-02",
-        time_from=16 * 3600 + 240, time_to=16 * 3600 + 360,
+        db,
+        "Vaasa:309392",
+        "2026-04-02",
+        "2026-04-02",
+        time_from=16 * 3600 + 240,
+        time_to=16 * 3600 + 360,
     )
     assert summary["total_departures"] == 1
     assert summary["with_realtime"] == 1
 
     # Route breakdown with time filter
     breakdown = get_route_breakdown(
-        db, "Vaasa:309392", "2026-04-02", "2026-04-02",
-        time_from=16 * 3600 + 240, time_to=16 * 3600 + 360,
+        db,
+        "Vaasa:309392",
+        "2026-04-02",
+        "2026-04-02",
+        time_from=16 * 3600 + 240,
+        time_to=16 * 3600 + 360,
     )
     assert len(breakdown) == 1
     assert breakdown[0]["departures"] == 1
