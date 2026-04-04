@@ -82,6 +82,29 @@ resource sqlDatabase 'Microsoft.Sql/servers/databases@2023-08-01-preview' = {
   }
 }
 
+// --- Log Analytics Workspace (required by Application Insights) ---
+resource logAnalytics 'Microsoft.OperationalInsights/workspaces@2023-09-01' = {
+  name: '${projectName}-${env}-log'
+  location: location
+  properties: {
+    sku: {
+      name: 'PerGB2018'
+    }
+    retentionInDays: 30
+  }
+}
+
+// --- Application Insights ---
+resource appInsights 'Microsoft.Insights/components@2020-02-02' = {
+  name: '${projectName}-${env}-appi'
+  location: location
+  kind: 'web'
+  properties: {
+    Application_Type: 'web'
+    WorkspaceResourceId: logAnalytics.id
+  }
+}
+
 // --- App Service ---
 resource webApp 'Microsoft.Web/sites@2023-12-01' = {
   name: '${projectName}-${env}-app'
@@ -121,7 +144,31 @@ resource webApp 'Microsoft.Web/sites@2023-12-01' = {
           name: 'WEBSITE_STARTUP_FILE'
           value: 'gunicorn --config gunicorn.conf.py "app:create_app()"'
         }
+        {
+          name: 'APPLICATIONINSIGHTS_CONNECTION_STRING'
+          value: appInsights.properties.ConnectionString
+        }
       ]
+    }
+  }
+}
+
+// --- App Service Logging (console logs to filesystem) ---
+resource webAppLogs 'Microsoft.Web/sites/config@2023-12-01' = {
+  parent: webApp
+  name: 'logs'
+  properties: {
+    applicationLogs: {
+      fileSystem: {
+        level: 'Information'
+      }
+    }
+    httpLogs: {
+      fileSystem: {
+        retentionInMb: 35
+        retentionInDays: 3
+        enabled: true
+      }
     }
   }
 }
