@@ -34,7 +34,7 @@ public class ApiFunctions
     // GET /api/status
     // -----------------------------------------------------------------------
 
-    [Function("ApiStatus")]
+    [Function("Status")]
     public HttpResponseData Status(
         [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "status")] HttpRequestData req)
     {
@@ -54,7 +54,7 @@ public class ApiFunctions
     // GET /api/stops
     // -----------------------------------------------------------------------
 
-    [Function("ApiStops")]
+    [Function("Stops")]
     public HttpResponseData Stops(
         [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "stops")] HttpRequestData req)
     {
@@ -68,7 +68,7 @@ public class ApiFunctions
     // GET /api/routes
     // -----------------------------------------------------------------------
 
-    [Function("ApiRoutes")]
+    [Function("Routes")]
     public HttpResponseData Routes(
         [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "routes")] HttpRequestData req)
     {
@@ -82,7 +82,7 @@ public class ApiFunctions
     // GET /api/routes-for-stop?stop_id=X
     // -----------------------------------------------------------------------
 
-    [Function("ApiRoutesForStop")]
+    [Function("RoutesForStop")]
     public HttpResponseData RoutesForStop(
         [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "routes-for-stop")] HttpRequestData req)
     {
@@ -100,7 +100,7 @@ public class ApiFunctions
     // GET /api/observations?stop_id=X&from=Y&to=Z
     // -----------------------------------------------------------------------
 
-    [Function("ApiObservations")]
+    [Function("Observations")]
     public HttpResponseData Observations(
         [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "observations")] HttpRequestData req)
     {
@@ -128,7 +128,7 @@ public class ApiFunctions
     // GET /api/latest-observations
     // -----------------------------------------------------------------------
 
-    [Function("ApiLatestObservations")]
+    [Function("LatestObservations")]
     public HttpResponseData LatestObservations(
         [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "latest-observations")] HttpRequestData req)
     {
@@ -142,7 +142,7 @@ public class ApiFunctions
     // GET /api/summary?stop_id=X&from=Y&to=Z
     // -----------------------------------------------------------------------
 
-    [Function("ApiSummary")]
+    [Function("Summary")]
     public HttpResponseData Summary(
         [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "summary")] HttpRequestData req)
     {
@@ -167,7 +167,7 @@ public class ApiFunctions
     // GET /api/route-breakdown?stop_id=X&from=Y&to=Z
     // -----------------------------------------------------------------------
 
-    [Function("ApiRouteBreakdown")]
+    [Function("RouteBreakdown")]
     public HttpResponseData RouteBreakdown(
         [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "route-breakdown")] HttpRequestData req)
     {
@@ -192,7 +192,7 @@ public class ApiFunctions
     // GET /api/delay-by-hour?stop_id=X&from=Y&to=Z
     // -----------------------------------------------------------------------
 
-    [Function("ApiDelayByHour")]
+    [Function("DelayByHour")]
     public HttpResponseData DelayByHour(
         [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "delay-by-hour")] HttpRequestData req)
     {
@@ -217,7 +217,7 @@ public class ApiFunctions
     // POST /api/collect/daily
     // -----------------------------------------------------------------------
 
-    [Function("ApiCollectDaily")]
+    [Function("CollectDaily")]
     public async Task<HttpResponseData> CollectDaily(
         [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "collect/daily")] HttpRequestData req)
     {
@@ -244,7 +244,7 @@ public class ApiFunctions
     // POST /api/collect/realtime
     // -----------------------------------------------------------------------
 
-    [Function("ApiCollectRealtime")]
+    [Function("CollectRealtime")]
     public async Task<HttpResponseData> CollectRealtime(
         [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "collect/realtime")] HttpRequestData req)
     {
@@ -270,7 +270,7 @@ public class ApiFunctions
     // POST /api/discover
     // -----------------------------------------------------------------------
 
-    [Function("ApiDiscover")]
+    [Function("Discover")]
     public async Task<HttpResponseData> Discover(
         [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "discover")] HttpRequestData req)
     {
