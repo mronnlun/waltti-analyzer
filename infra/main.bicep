@@ -16,8 +16,8 @@ param location string = resourceGroup().location
 @secure()
 param digitransitApiKey string
 
-@description('Default stop GTFS ID shown in the dashboard')
-param defaultStopId string = 'Vaasa:309392'
+@description('Target stop GTFS ID')
+param targetStopId string = 'Vaasa:309392'
 
 @description('App Service Plan SKU')
 @allowed(['F1', 'B1', 'B2', 'S1'])
@@ -154,8 +154,8 @@ resource webApp 'Microsoft.Web/sites@2023-12-01' = {
           value: digitransitApiKey
         }
         {
-          name: 'DEFAULT_STOP_ID'
-          value: defaultStopId
+          name: 'TARGET_STOP_ID'
+          value: targetStopId
         }
         {
           name: 'DATABASE_URL'
