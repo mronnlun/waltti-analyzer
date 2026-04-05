@@ -454,12 +454,13 @@ def get_recent_observations(
 def get_latest_observations(
     db: sqlite3.Connection, limit: int = 100, feed_id: str | None = None,
 ) -> list[sqlite3.Row]:
-    """Return the most recently queried observations across all stops."""
+    """Return the most recently queried realtime observations (GPS only)."""
     query = f"""SELECT {_OBS_COLUMNS}, s.name AS stop_name
-           {_OBS_JOINS}"""
+           {_OBS_JOINS}
+           WHERE o.realtime = 1"""
     params: list = []
     if feed_id:
-        query += " WHERE s.gtfs_id LIKE ?"
+        query += " AND s.gtfs_id LIKE ?"
         params.append(f"{feed_id}:%")
     query += " ORDER BY o.queried_at DESC, o.service_date DESC, o.scheduled_departure DESC LIMIT ?"
     params.append(limit)

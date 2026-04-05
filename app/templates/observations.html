@@ -1,10 +1,11 @@
 {% extends "base.html" %}
 {% from "macros.html" import format_delay %}
 
-{% block title %}Latest Observations — Waltti Analyzer{% endblock %}
+{% block title %}Latest GPS Observations — Waltti Analyzer{% endblock %}
 
 {% block content %}
-<h1>Latest 100 Observations</h1>
+<h1>Latest 100 GPS Observations</h1>
+<p class="subtitle">Actual recorded runs from buses with GPS tracking</p>
 
 {% if observations %}
 <div class="table-responsive">
@@ -16,21 +17,21 @@
             <th>Route</th>
             <th>Headsign</th>
             <th>Scheduled</th>
+            <th>Actual</th>
             <th>Deviation</th>
-            <th>GPS</th>
         </tr>
     </thead>
     <tbody>
         {% for obs in observations %}
-        {% set suspect = obs.realtime and obs.departure_delay is not none and (obs.departure_delay > 1800 or obs.departure_delay < -1800) %}
+        {% set suspect = obs.departure_delay is not none and (obs.departure_delay > 1800 or obs.departure_delay < -1800) %}
         <tr{% if suspect %} class="suspect-row"{% endif %}>
             <td>{{ obs.service_date }}</td>
             <td>{{ obs.stop_name }}</td>
             <td>{{ obs.route_short_name }}</td>
             <td>{{ obs.headsign }}</td>
             <td>{{ "%02d:%02d"|format(obs.scheduled_departure // 3600, (obs.scheduled_departure % 3600) // 60) }}</td>
+            <td>{% if obs.realtime_departure is not none %}{{ "%02d:%02d"|format(obs.realtime_departure // 3600, (obs.realtime_departure % 3600) // 60) }}{% endif %}</td>
             <td>{{ format_delay(obs.departure_delay) }}{% if suspect %} ⚠{% endif %}</td>
-            <td>{{ "✓" if obs.realtime else "No GPS" }}</td>
         </tr>
         {% endfor %}
     </tbody>
@@ -38,7 +39,7 @@
 </div>
 {% else %}
 <section class="stats-section">
-    <p>No observations collected yet.</p>
+    <p>No GPS observations collected yet.</p>
 </section>
 {% endif %}
 {% endblock %}
