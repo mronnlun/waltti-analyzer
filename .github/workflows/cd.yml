@@ -57,7 +57,6 @@ jobs:
       - name: Deploy Bicep
         id: deploy
         env:
-          SQL_ADMIN_PASSWORD: ${{ secrets.SQL_ADMIN_PASSWORD }}
           DIGITRANSIT_API_KEY: ${{ secrets.DIGITRANSIT_API_KEY }}
         run: |
           result=$(az deployment group create \
@@ -66,7 +65,6 @@ jobs:
             --parameters projectName=${{ env.AZURE_PROJECT_NAME }} \
             --parameters env=${{ env.AZURE_ENV }} \
             --parameters "digitransitApiKey=$DIGITRANSIT_API_KEY" \
-            --parameters "sqlAdminPassword=$SQL_ADMIN_PASSWORD" \
             --parameters skuName=B1 \
             --query 'properties.outputs' -o json)
           echo "appName=$(echo $result | jq -r '.appName.value')" >> $GITHUB_OUTPUT
