@@ -408,7 +408,13 @@ def upsert_observations_batch(db: sqlite3.Connection, observations: list[dict]):
 
 
 def get_observations(
-    db: sqlite3.Connection, stop_id: str, start_date: str, end_date: str, route: str | None = None
+    db: sqlite3.Connection,
+    stop_id: str,
+    start_date: str,
+    end_date: str,
+    route: str | None = None,
+    time_from: int | None = None,
+    time_to: int | None = None,
 ) -> list[sqlite3.Row]:
     query = f"""SELECT {_OBS_COLUMNS}
                {_OBS_JOINS}
@@ -417,7 +423,13 @@ def get_observations(
     if route:
         query += " AND t.route_short_name = ?"
         params.append(route)
-    query += " ORDER BY o.service_date, o.scheduled_departure"
+    if time_from is not None:
+        query += " AND o.scheduled_departure >= ?"
+        params.append(time_from)
+    if time_to is not None:
+        query += " AND o.scheduled_departure <= ?"
+        params.append(time_to)
+    query += " ORDER BY o.service_date DESC, o.scheduled_departure DESC"
     return db.execute(query, params).fetchall()
 
 

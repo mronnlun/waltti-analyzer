@@ -165,10 +165,10 @@
 </section>
 {% endif %}
 
-<!-- Recent Observations -->
+<!-- All Observations -->
+{% if recent %}
 <section class="stats-section">
-    <h2>Recent Observations{% if stop_id %} — {{ stop_id }}{% endif %}</h2>
-    {% if recent %}
+    <h2>All Departures</h2>
     <div class="table-responsive">
     <table class="data-table">
         <thead>
@@ -177,6 +177,7 @@
                 <th>Route</th>
                 <th>Headsign</th>
                 <th>Scheduled</th>
+                <th>Actual</th>
                 <th>Deviation</th>
                 <th>GPS</th>
             </tr>
@@ -189,17 +190,16 @@
                 <td>{{ obs.route_short_name }}</td>
                 <td>{{ obs.headsign }}</td>
                 <td>{{ "%02d:%02d"|format(obs.scheduled_departure // 3600, (obs.scheduled_departure % 3600) // 60) }}</td>
-                <td>{{ format_delay(obs.departure_delay) }}{% if suspect %} ⚠{% endif %}</td>
-                <td>{{ "✓" if obs.realtime else "No GPS" }}</td>
+                <td>{% if obs.realtime and obs.realtime_departure is not none %}{{ "%02d:%02d"|format(obs.realtime_departure // 3600, (obs.realtime_departure % 3600) // 60) }}{% endif %}</td>
+                <td>{{ format_delay(obs.departure_delay) if obs.realtime else "" }}{% if suspect %} ⚠{% endif %}</td>
+                <td>{{ "✓" if obs.realtime else "" }}</td>
             </tr>
             {% endfor %}
         </tbody>
     </table>
     </div>
-    {% else %}
-    <p>No observations yet for this stop.</p>
-    {% endif %}
 </section>
+{% endif %}
 {% endblock %}
 
 {% block scripts %}

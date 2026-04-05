@@ -8,7 +8,7 @@ from app.db import (
     get_all_stops,
     get_db,
     get_latest_observations,
-    get_recent_observations,
+    get_observations,
     get_routes_for_stop,
 )
 
@@ -52,7 +52,11 @@ def index():
             db, stop_id, from_date, to_date, route, time_from, time_to
         )
 
-    recent = get_recent_observations(db, stop_id, limit=20, route=route) if stop_id else []
+    recent = []
+    if from_date and to_date and stop_id:
+        recent = get_observations(
+            db, stop_id, from_date, to_date, route, time_from, time_to
+        )
 
     return render_template(
         "dashboard.html",
