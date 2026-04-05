@@ -12,6 +12,10 @@ param env string = 'prod'
 @description('Azure region for resources')
 param location string = resourceGroup().location
 
+@description('Azure region for the Static Web App (limited availability)')
+@allowed(['westus2', 'centralus', 'eastus2', 'westeurope', 'eastasia'])
+param staticWebAppLocation string = 'westeurope'
+
 @description('Digitransit API key')
 @secure()
 param digitransitApiKey string
@@ -202,7 +206,7 @@ resource functionApp 'Microsoft.Web/sites@2023-12-01' = {
 // --- Static Web App for SPA frontend ---
 resource staticWebApp 'Microsoft.Web/staticSites@2023-12-01' = {
   name: '${projectName}-${env}-swa'
-  location: location
+  location: staticWebAppLocation
   sku: {
     name: 'Free'
     tier: 'Free'
