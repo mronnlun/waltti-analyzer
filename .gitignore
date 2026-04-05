@@ -1,15 +1,27 @@
-.env
+# .NET
+bin/
+obj/
+*.user
+*.suo
+*.sln.docstates
+
+# IDE
+.vs/
+.vscode/
+*.swp
+
+# Azure Functions
+api/WalttiAnalyzer.Functions/local.settings.json
+
+# Data
 data/
+*.db
+
+# Python cache (legacy)
 __pycache__/
 *.pyc
-*.egg-info/
-.venv/
-*.db
 .ruff_cache/
 .pytest_cache/
-htmlcov/
-.coverage
-dist/
-build/
+
+# Agent
 .claude/settings.local.json
-.vscode/

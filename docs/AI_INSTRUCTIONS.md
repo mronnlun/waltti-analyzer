@@ -5,7 +5,7 @@ When project direction changes, update existing documentation in the same change
 
 ## Project Overview
 
-A Flask web application that collects and analyzes the punctuality of buses at stops in Vaasa, Finland. It polls the Digitransit Waltti GraphQL API, stores timetable and realtime delay data in SQLite, and displays timeliness reports in a web dashboard.
+A web application that collects and analyzes the punctuality of buses at stops in Vaasa, Finland. It polls the Digitransit Waltti GraphQL API, stores timetable and realtime delay data in SQLite (locally) or Azure SQL (production), and displays timeliness reports in a single-page web dashboard.
 
 The Digitransit API does **not** retain historical delay data. Realtime delay values are only available while buses are actively running. Once a service day passes, the API reverts to static schedule data. This means the application **must** actively poll during service hours to capture delay data before it disappears.
 
@@ -13,53 +13,70 @@ The current direction is feed-wide coverage for Vaasa. A default stop may still 
 
 ## Tech Stack
 
-- **Python 3.11+** with **Flask** web framework
-- **SQLite** database locally (stdlib `sqlite3`, WAL mode); **Azure SQL** (via pyodbc/ODBC Driver 18) in production on Azure App Service
-- **APScheduler** for background polling (in-process, no external broker)
-- **Jinja2** server-rendered templates with **Chart.js** (CDN) for charts
-- **Gunicorn** + **Docker** for deployment
-- **zoneinfo** (stdlib) for timezone handling — Europe/Helsinki
-- No ORM — plain SQL via `sqlite3` (locally) or `pyodbc` (Azure)
+- **C# / .NET 8** with **Azure Functions** (consumption plan, isolated worker model)
+- **SQLite** database locally (Microsoft.Data.Sqlite); **Azure SQL** in production
+- Timer-triggered function for background data synchronization
+- HTTP-triggered functions as REST API backend
+- **SPA frontend** with vanilla JavaScript, **Chart.js** (CDN) for charts, **Tom-Select** (CDN) for dropdowns
+- **xUnit** for testing
 - No frontend build step — all JS via CDN
 
 ## Architecture
 
 ```
-app/
-├── __init__.py          # Flask app factory (create_app)
-├── config.py            # Configuration from env vars
-├── db.py                # SQLite schema + data access layer
-├── digitransit.py       # Digitransit GraphQL API client
-├── collector.py         # Data collection (daily schedule + realtime polling)
-├── analyzer.py          # Statistics and reporting
-├── scheduler.py         # APScheduler background job setup
-├── routes/
-│   ├── dashboard.py     # Server-rendered HTML pages
-│   └── api.py           # JSON API endpoints
-├── templates/           # Jinja2 templates
-└── static/              # CSS
+api/WalttiAnalyzer.Functions/
+├── Program.cs                       # Host builder and DI setup
+├── WalttiAnalyzer.Functions.csproj  # Project file (.NET 8, isolated worker)
+├── host.json                        # Azure Functions host configuration
+├── local.settings.json.example      # Dev settings template
+├── Functions/
+│   ├── SyncBusDataFunction.cs       # Timer trigger (every 3 min)
+│   └── ApiFunctions.cs              # HTTP triggers (REST API)
+├── Services/
+│   ├── DatabaseService.cs           # SQLite schema + data access
+│   ├── DigitransitClient.cs         # GraphQL API client
+│   ├── CollectorService.cs          # Data collection orchestration
+│   └── AnalyzerService.cs           # Statistics and reporting
+└── Models/
+    ├── Stop.cs
+    ├── Trip.cs
+    ├── Observation.cs
+    └── CollectionLogEntry.cs
+
+frontend/
+├── index.html           # SPA entry point
+├── style.css            # Stylesheet
+└── app.js               # Client-side JavaScript
+
+tests/WalttiAnalyzer.Tests/
+├── WalttiAnalyzer.Tests.csproj
+├── TestDbFixture.cs     # Shared test DB setup
+├── DatabaseTests.cs     # DB layer tests
+└── AnalyzerTests.cs     # Statistics tests
+
+infra/
+├── main.bicep           # Azure infrastructure (Function App, Static Web App, SQL)
+└── parameters.json      # Deployment parameters
 ```
 
 ## Coding Conventions
 
-- Type hints on function signatures
-- Use `zoneinfo.ZoneInfo("Europe/Helsinki")` for all timezone work
-- SQLite connections via `flask.g` in request context; direct `sqlite3.connect()` in scheduler
+- Use dependency injection for services (registered in Program.cs)
+- Database connections via `DatabaseService.Connect(dbPath)` — close when done
 - All times stored in DB as UTC unix timestamps or seconds-since-midnight (as from API)
 - All display output uses Europe/Helsinki timezone
-- The current code uses upserts keyed on `(stop_gtfs_id, trip_gtfs_id, service_date)`; preserve the meaning of the best known observation when changing collector behavior
+- The code uses upserts keyed on `(stop_gtfs_id, trip_gtfs_id, service_date)`
 - **Always work on a feature branch — never commit directly to `main`.**
 - **Always open a pull request** for your branch when the work is ready.
-- Run `ruff check` and `ruff format` before committing; a `PreToolUse` hook enforces this automatically before every `git push`.
-- Tests use `pytest` with `TestConfig` (in-memory SQLite)
+
 ## Key API Details
 
 - **Endpoint**: `POST https://api.digitransit.fi/routing/v2/waltti/gtfs/v1`
 - **Auth header**: `digitransit-subscription-key: <key>`
 - **Content-Type**: `application/json`
 - **Body**: `{"query": "<graphql>"}`
-- **Stop ID format**: `Vaasa:309392` (no `GTFS:` prefix — that prefix causes silent null returns)
-- **Realtime fields**: `realtime` (bool), `departureDelay` (seconds, positive=late), `realtimeState` (SCHEDULED/UPDATED/CANCELED/ADDED/MODIFIED)
+- **Stop ID format**: `Vaasa:309392` (no `GTFS:` prefix)
+- **Realtime fields**: `realtime` (bool), `departureDelay` (seconds, positive=late), `realtimeState` (SCHEDULED/UPDATED/CANCELED)
 - **No-service days**: All patterns return empty `stoptimes` arrays (not an error)
 
 ## Environment Variables
@@ -67,41 +84,26 @@ app/
 | Variable | Default | Required |
 |---|---|---|
 | `DIGITRANSIT_API_KEY` | — | Yes |
+| `DIGITRANSIT_API_URL` | `https://api.digitransit.fi/routing/v2/waltti/gtfs/v1` | No |
 | `FEED_ID` | `Vaasa` | No |
 | `DEFAULT_STOP_ID` | `Vaasa:309392` | No |
 | `DATABASE_PATH` | `data/waltti.db` | No (local only) |
-| `POLL_INTERVAL_SECONDS` | `300` | No |
-| `POLL_START_HOUR` | `5` | No |
-| `POLL_END_HOUR` | `24` | No |
 
 **Database per environment:**
-- **Local development**: SQLite at `DATABASE_PATH` (default `data/waltti.db`). No extra setup required.
-- **Azure (production)**: Azure SQL Server. The connection string is set via the `DATABASE` Azure App Service connection string (injected by Bicep). Do not set `DATABASE_PATH` in production.
+- **Local development**: SQLite at `DATABASE_PATH`. No extra setup required.
+- **Azure (production)**: Azure SQL Server via `DATABASE` connection string (injected by Bicep).
 
-Some older deployment-facing files still refer to `TARGET_STOP_ID`; prefer `DEFAULT_STOP_ID` in Python app code and update stale references when you touch them.
-
-## Running Locally
+## Building and Testing
 
 ```bash
-python -m venv .venv
-source .venv/bin/activate    # or .venv\Scripts\activate on Windows
-pip install -r requirements.txt
-pip install -e ".[dev]"
-cp .env.example .env         # add your API key
-flask run --debug
-```
-
-## Running Tests
-
-```bash
-pytest
-ruff check .
+dotnet build api/WalttiAnalyzer.Functions/WalttiAnalyzer.Functions.csproj
+dotnet test tests/WalttiAnalyzer.Tests/WalttiAnalyzer.Tests.csproj
 ```
 
 ## Database Schema
 
-Four tables: `stops`, `trips`, `observations`, `collection_log`. See `app/db.py` for full DDL.
-The `observations` table has a `UNIQUE(stop_gtfs_id, trip_gtfs_id, service_date)` constraint for upserts.
+Five tables: `stops`, `trips`, `realtime_states`, `observations`, `collection_log`. See `DatabaseService.cs` for full DDL.
+The `observations` table has a `UNIQUE(stop_id, trip_id, service_date)` constraint for upserts.
 
 ## Important Edge Cases
 

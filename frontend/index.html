@@ -3,8 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{% block title %}Waltti Analyzer{% endblock %}</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <title>Waltti Analyzer</title>
+    <link rel="stylesheet" href="style.css">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/tom-select@2/dist/css/tom-select.css">
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
     <script src="https://cdn.jsdelivr.net/npm/tom-select@2/dist/js/tom-select.complete.min.js"></script>
@@ -12,17 +12,17 @@
 <body>
     <nav>
         <div class="nav-content">
-            <a href="/" class="nav-brand">Waltti Analyzer</a>
+            <a href="#" class="nav-brand" data-page="dashboard">Waltti Analyzer</a>
             <div class="nav-links">
-                <a href="/">Dashboard</a>
-                <a href="/observations">Observations</a>
-                <a href="/stops">Stops</a>
+                <a href="#" data-page="dashboard" class="active">Dashboard</a>
+                <a href="#" data-page="observations">Observations</a>
+                <a href="#" data-page="stops">Stops</a>
             </div>
         </div>
     </nav>
-    <main>
-        {% block content %}{% endblock %}
+    <main id="app">
+        <!-- Page content rendered by JavaScript -->
     </main>
-    {% block scripts %}{% endblock %}
+    <script src="app.js"></script>
 </body>
 </html>

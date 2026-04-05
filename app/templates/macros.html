@@ -1,9 +1,0 @@
-{% macro format_delay(seconds) -%}
-{%- if seconds is none or seconds == 0 -%}
-    0s
-{%- elif seconds >= 0 -%}
-    +{{ (seconds // 60)|int }}m {{ "%02d"|format((seconds % 60)|int) }}s
-{%- else -%}
-    -{{ ((-seconds) // 60)|int }}m {{ "%02d"|format(((-seconds) % 60)|int) }}s
-{%- endif -%}
-{%- endmacro %}

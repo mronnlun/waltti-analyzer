@@ -39,7 +39,8 @@ nav {
     margin-left: 1.5rem;
 }
 
-.nav-links a:hover {
+.nav-links a:hover,
+.nav-links a.active {
     color: white;
 }
 
