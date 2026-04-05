@@ -2,6 +2,8 @@ using System.Text.Json;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Azure.Functions.Worker.Http;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
+using WalttiAnalyzer.Functions.Models;
 using WalttiAnalyzer.Functions.Services;
 
 namespace WalttiAnalyzer.Functions.Functions;
@@ -12,21 +14,23 @@ public class ApiFunctions
     private readonly DatabaseService _db;
     private readonly AnalyzerService _analyzer;
     private readonly CollectorService _collector;
+    private readonly WalttiSettings _settings;
 
     public ApiFunctions(ILogger<ApiFunctions> logger,
-        DatabaseService db, AnalyzerService analyzer, CollectorService collector)
+        DatabaseService db, AnalyzerService analyzer, CollectorService collector,
+        IOptions<WalttiSettings> settings)
     {
         _logger = logger;
         _db = db;
         _analyzer = analyzer;
         _collector = collector;
+        _settings = settings.Value;
     }
 
-    private string DbPath => Environment.GetEnvironmentVariable("DATABASE_PATH") ?? "data/waltti.db";
-    private string FeedId => Environment.GetEnvironmentVariable("FEED_ID") ?? "Vaasa";
-    private string ApiUrl => Environment.GetEnvironmentVariable("DIGITRANSIT_API_URL")
-        ?? "https://api.digitransit.fi/routing/v2/waltti/gtfs/v1";
-    private string ApiKey => Environment.GetEnvironmentVariable("DIGITRANSIT_API_KEY") ?? "";
+    private string DbPath => _settings.DatabasePath;
+    private string FeedId => _settings.FeedId;
+    private string ApiUrl => _settings.DigitransitApiUrl;
+    private string ApiKey => _settings.DigitransitApiKey;
 
     private void EnsureDb() => _db.InitDb(DbPath);
 

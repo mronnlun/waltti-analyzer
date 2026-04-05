@@ -1,5 +1,7 @@
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
+using WalttiAnalyzer.Functions.Models;
 using WalttiAnalyzer.Functions.Services;
 
 namespace WalttiAnalyzer.Functions.Functions;
@@ -9,16 +11,18 @@ public class SyncBusDataFunction
     private readonly ILogger<SyncBusDataFunction> _logger;
     private readonly DatabaseService _db;
     private readonly CollectorService _collector;
+    private readonly WalttiSettings _settings;
 
     private static readonly TimeZoneInfo HelsinkiTz =
         TimeZoneInfo.FindSystemTimeZoneById("Europe/Helsinki");
 
     public SyncBusDataFunction(ILogger<SyncBusDataFunction> logger,
-        DatabaseService db, CollectorService collector)
+        DatabaseService db, CollectorService collector, IOptions<WalttiSettings> settings)
     {
         _logger = logger;
         _db = db;
         _collector = collector;
+        _settings = settings.Value;
     }
 
     /// <summary>
@@ -29,11 +33,10 @@ public class SyncBusDataFunction
     [Function("SyncBusData")]
     public async Task Run([TimerTrigger("0 */3 * * * *")] TimerInfo timer)
     {
-        var apiUrl = Environment.GetEnvironmentVariable("DIGITRANSIT_API_URL")
-            ?? "https://api.digitransit.fi/routing/v2/waltti/gtfs/v1";
-        var apiKey = Environment.GetEnvironmentVariable("DIGITRANSIT_API_KEY") ?? "";
-        var feedId = Environment.GetEnvironmentVariable("FEED_ID") ?? "Vaasa";
-        var dbPath = Environment.GetEnvironmentVariable("DATABASE_PATH") ?? "data/waltti.db";
+        var apiUrl = _settings.DigitransitApiUrl;
+        var apiKey = _settings.DigitransitApiKey;
+        var feedId = _settings.FeedId;
+        var dbPath = _settings.DatabasePath;
 
         if (string.IsNullOrEmpty(apiKey))
         {
