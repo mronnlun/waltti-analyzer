@@ -151,7 +151,7 @@ resource functionApp 'Microsoft.Web/sites@2023-12-01' = {
     serverFarmId: functionPlan.id
     httpsOnly: true
     siteConfig: {
-      linuxFxVersion: 'PYTHON|3.12'
+      linuxFxVersion: 'DOTNET-ISOLATED|8.0'
       connectionStrings: [
         {
           name: 'DATABASE'
@@ -170,7 +170,7 @@ resource functionApp 'Microsoft.Web/sites@2023-12-01' = {
         }
         {
           name: 'FUNCTIONS_WORKER_RUNTIME'
-          value: 'python'
+          value: 'dotnet-isolated'
         }
         {
           name: 'DIGITRANSIT_API_KEY'

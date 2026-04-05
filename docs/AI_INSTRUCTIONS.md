@@ -13,34 +13,46 @@ The current direction is feed-wide coverage for Vaasa. A default stop may still 
 
 ## Tech Stack
 
-- **Python 3.11+** with **Azure Functions** (consumption plan, v2 programming model)
-- **SQLite** database locally (stdlib `sqlite3`, WAL mode); **Azure SQL** (via pyodbc/ODBC Driver 18) in production
-- Timer-triggered function for background data synchronization (replaces APScheduler)
+- **C# / .NET 8** with **Azure Functions** (consumption plan, isolated worker model)
+- **SQLite** database locally (Microsoft.Data.Sqlite); **Azure SQL** in production
+- Timer-triggered function for background data synchronization
 - HTTP-triggered functions as REST API backend
 - **SPA frontend** with vanilla JavaScript, **Chart.js** (CDN) for charts, **Tom-Select** (CDN) for dropdowns
-- **zoneinfo** (stdlib) for timezone handling — Europe/Helsinki
-- No ORM — plain SQL via `sqlite3` (locally) or `pyodbc` (Azure)
+- **xUnit** for testing
 - No frontend build step — all JS via CDN
 
 ## Architecture
 
 ```
-api/
-├── function_app.py      # Azure Functions entry point (timer + HTTP triggers)
-├── host.json            # Azure Functions host configuration
-├── requirements.txt     # Python dependencies for the Function App
-└── shared/
-    ├── __init__.py
-    ├── config.py        # Configuration from environment variables
-    ├── db.py            # SQLite schema + data access layer
-    ├── digitransit.py   # Digitransit GraphQL API client
-    ├── collector.py     # Data collection (discovery, daily schedule, realtime)
-    └── analyzer.py      # Statistics and reporting
+api/WalttiAnalyzer.Functions/
+├── Program.cs                       # Host builder and DI setup
+├── WalttiAnalyzer.Functions.csproj  # Project file (.NET 8, isolated worker)
+├── host.json                        # Azure Functions host configuration
+├── local.settings.json.example      # Dev settings template
+├── Functions/
+│   ├── SyncBusDataFunction.cs       # Timer trigger (every 3 min)
+│   └── ApiFunctions.cs              # HTTP triggers (REST API)
+├── Services/
+│   ├── DatabaseService.cs           # SQLite schema + data access
+│   ├── DigitransitClient.cs         # GraphQL API client
+│   ├── CollectorService.cs          # Data collection orchestration
+│   └── AnalyzerService.cs           # Statistics and reporting
+└── Models/
+    ├── Stop.cs
+    ├── Trip.cs
+    ├── Observation.cs
+    └── CollectionLogEntry.cs
 
 frontend/
 ├── index.html           # SPA entry point
 ├── style.css            # Stylesheet
-└── app.js               # Client-side JavaScript (routing, API calls, rendering)
+└── app.js               # Client-side JavaScript
+
+tests/WalttiAnalyzer.Tests/
+├── WalttiAnalyzer.Tests.csproj
+├── TestDbFixture.cs     # Shared test DB setup
+├── DatabaseTests.cs     # DB layer tests
+└── AnalyzerTests.cs     # Statistics tests
 
 infra/
 ├── main.bicep           # Azure infrastructure (Function App, Static Web App, SQL)
@@ -49,16 +61,13 @@ infra/
 
 ## Coding Conventions
 
-- Type hints on function signatures
-- Use `zoneinfo.ZoneInfo("Europe/Helsinki")` for all timezone work
-- Database connections are created via `shared.db.connect(db_path)` and closed when done
+- Use dependency injection for services (registered in Program.cs)
+- Database connections via `DatabaseService.Connect(dbPath)` — close when done
 - All times stored in DB as UTC unix timestamps or seconds-since-midnight (as from API)
 - All display output uses Europe/Helsinki timezone
-- The current code uses upserts keyed on `(stop_gtfs_id, trip_gtfs_id, service_date)`; preserve the meaning of the best known observation when changing collector behavior
+- The code uses upserts keyed on `(stop_gtfs_id, trip_gtfs_id, service_date)`
 - **Always work on a feature branch — never commit directly to `main`.**
 - **Always open a pull request** for your branch when the work is ready.
-- Run `ruff check` and `ruff format` before committing.
-- Tests use `pytest` with in-memory SQLite.
 
 ## Key API Details
 
@@ -66,8 +75,8 @@ infra/
 - **Auth header**: `digitransit-subscription-key: <key>`
 - **Content-Type**: `application/json`
 - **Body**: `{"query": "<graphql>"}`
-- **Stop ID format**: `Vaasa:309392` (no `GTFS:` prefix — that prefix causes silent null returns)
-- **Realtime fields**: `realtime` (bool), `departureDelay` (seconds, positive=late), `realtimeState` (SCHEDULED/UPDATED/CANCELED/ADDED/MODIFIED)
+- **Stop ID format**: `Vaasa:309392` (no `GTFS:` prefix)
+- **Realtime fields**: `realtime` (bool), `departureDelay` (seconds, positive=late), `realtimeState` (SCHEDULED/UPDATED/CANCELED)
 - **No-service days**: All patterns return empty `stoptimes` arrays (not an error)
 
 ## Environment Variables
@@ -75,36 +84,25 @@ infra/
 | Variable | Default | Required |
 |---|---|---|
 | `DIGITRANSIT_API_KEY` | — | Yes |
+| `DIGITRANSIT_API_URL` | `https://api.digitransit.fi/routing/v2/waltti/gtfs/v1` | No |
 | `FEED_ID` | `Vaasa` | No |
 | `DEFAULT_STOP_ID` | `Vaasa:309392` | No |
 | `DATABASE_PATH` | `data/waltti.db` | No (local only) |
 
 **Database per environment:**
-- **Local development**: SQLite at `DATABASE_PATH` (default `data/waltti.db`). No extra setup required.
-- **Azure (production)**: Azure SQL Server. The connection string is set via the `DATABASE` Azure connection string (injected by Bicep). Do not set `DATABASE_PATH` in production.
+- **Local development**: SQLite at `DATABASE_PATH`. No extra setup required.
+- **Azure (production)**: Azure SQL Server via `DATABASE` connection string (injected by Bicep).
 
-## Running Locally
-
-```bash
-python -m venv .venv
-source .venv/bin/activate
-pip install -r api/requirements.txt
-pip install -e ".[dev]"
-cp api/local.settings.json.example api/local.settings.json
-# Edit api/local.settings.json — add your DIGITRANSIT_API_KEY
-cd api && func start
-```
-
-## Running Tests
+## Building and Testing
 
 ```bash
-pytest
-ruff check .
+dotnet build api/WalttiAnalyzer.Functions/WalttiAnalyzer.Functions.csproj
+dotnet test tests/WalttiAnalyzer.Tests/WalttiAnalyzer.Tests.csproj
 ```
 
 ## Database Schema
 
-Five tables: `stops`, `trips`, `realtime_states`, `observations`, `collection_log`. See `api/shared/db.py` for full DDL.
+Five tables: `stops`, `trips`, `realtime_states`, `observations`, `collection_log`. See `DatabaseService.cs` for full DDL.
 The `observations` table has a `UNIQUE(stop_id, trip_id, service_date)` constraint for upserts.
 
 ## Important Edge Cases

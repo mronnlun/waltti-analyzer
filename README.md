@@ -4,14 +4,14 @@ Bus punctuality analysis for Vaasa, Finland. Collects realtime delay data from t
 
 ## Architecture
 
-- **Backend**: Azure Functions (Python, consumption plan) — `api/`
+- **Backend**: Azure Functions (C#/.NET 8, isolated worker, consumption plan) — `api/WalttiAnalyzer.Functions/`
 - **Frontend**: Static SPA (HTML/CSS/JS) — `frontend/`
 - **Database**: SQLite locally, Azure SQL in production
 - **Infrastructure**: Bicep templates in `infra/`
 
 ### How it works
 
-1. **Timer-triggered function** (`sync_bus_data`) runs every 3 minutes:
+1. **Timer-triggered function** (`SyncBusData`) runs every 3 minutes:
    - **Realtime polling** — every invocation captures current GPS-based delays before they disappear from the API
    - **Daily collection** — at 03:00 and 23:00 Helsinki time, fetches full day schedules
    - **Weekly discovery** — Monday 02:00 Helsinki time, discovers all stops/routes for the feed
@@ -22,30 +22,22 @@ Bus punctuality analysis for Vaasa, Finland. Collects realtime delay data from t
 
 ### Prerequisites
 
-- Python 3.11+
+- .NET 8 SDK
 - [Azure Functions Core Tools](https://learn.microsoft.com/en-us/azure/azure-functions/functions-run-local) (v4)
 - A Digitransit API key (free at https://portal.digitransit.fi)
 
 ### Setup
 
 ```bash
-# Create and activate a virtual environment
-python -m venv .venv
-source .venv/bin/activate    # or .venv\Scripts\activate on Windows
-
-# Install dependencies
-pip install -r api/requirements.txt
-pip install -e ".[dev]"
-
-# Configure environment
-cp api/local.settings.json.example api/local.settings.json
-# Edit api/local.settings.json and add your DIGITRANSIT_API_KEY
+# Copy and configure local settings
+cp api/WalttiAnalyzer.Functions/local.settings.json.example api/WalttiAnalyzer.Functions/local.settings.json
+# Edit local.settings.json — add your DIGITRANSIT_API_KEY
 ```
 
 ### Run the backend
 
 ```bash
-cd api
+cd api/WalttiAnalyzer.Functions
 func start
 ```
 
@@ -62,11 +54,14 @@ python -m http.server 8080
 
 Then open `http://localhost:8080`. By default the SPA calls `/api/*` — configure `window.WALTTI_API_BASE` in the browser console if the Function App runs on a different port.
 
-## Running Tests
+## Building and Testing
 
 ```bash
-pytest
-ruff check .
+# Build the Function App
+dotnet build api/WalttiAnalyzer.Functions/WalttiAnalyzer.Functions.csproj
+
+# Run tests
+dotnet test tests/WalttiAnalyzer.Tests/WalttiAnalyzer.Tests.csproj
 ```
 
 ## Configuration
@@ -74,6 +69,7 @@ ruff check .
 | Variable | Default | Description |
 |---|---|---|
 | `DIGITRANSIT_API_KEY` | — | Required. API key for Digitransit |
+| `DIGITRANSIT_API_URL` | `https://api.digitransit.fi/routing/v2/waltti/gtfs/v1` | Digitransit endpoint |
 | `FEED_ID` | `Vaasa` | GTFS feed to collect data for |
 | `DEFAULT_STOP_ID` | `Vaasa:309392` | Default stop shown in the UI |
 | `DATABASE_PATH` | `data/waltti.db` | SQLite database path (local only) |
@@ -102,7 +98,7 @@ In Azure, the database connection string is injected via the `DATABASE` connecti
 The project deploys to Azure via GitHub Actions (`.github/workflows/cd.yml`):
 
 1. **Infrastructure** — Bicep template creates a consumption-plan Function App, Static Web App, Azure SQL, and supporting resources
-2. **API** — Function App code is deployed via zip deployment
+2. **API** — Function App is published with `dotnet publish` and deployed via zip deployment
 3. **Frontend** — Static files are deployed to Azure Static Web Apps
 
 ## Notes
