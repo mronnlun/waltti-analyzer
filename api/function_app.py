@@ -76,6 +76,7 @@ def _cors_preflight() -> func.HttpResponse:
 
 
 @app.timer_trigger(
+    # NCRONTAB: sec min hour day month dayOfWeek — runs every 3 minutes
     schedule="0 */3 * * * *",
     arg_name="timer",
     run_on_startup=False,

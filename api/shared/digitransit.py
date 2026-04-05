@@ -249,8 +249,6 @@ class DigitransitClient:
 
     def fetch_bulk_realtime(self, stop_ids: list[str]) -> list[dict]:
         """Fetch realtime data for all stops in a single query."""
-        import json
-
         now_utc = int(time.time())
         ids_json = json.dumps(stop_ids)
         data = self._query(

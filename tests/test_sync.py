@@ -31,10 +31,11 @@ def test_sync_runs_realtime_poll(db_path, monkeypatch):
 
     importlib.reload(shared.config)
 
-    with patch("shared.collector.poll_realtime_once") as mock_poll:
-        mock_poll.return_value = {"status": "ok", "updated": 0}
+    from shared.collector import poll_realtime_once
 
-        from shared.collector import poll_realtime_once
+    with patch("shared.collector.DigitransitClient") as MockClient:
+        instance = MockClient.return_value
+        instance.fetch_bulk_realtime.return_value = []
 
         result = poll_realtime_once(db_path, "http://test/api", "test-key", feed_id="Vaasa")
         assert result["status"] == "ok"
