@@ -3,7 +3,6 @@ import logging
 import os
 
 import azure.functions as func
-
 from shared import config
 from shared.analyzer import (
     get_delay_by_hour,

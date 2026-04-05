@@ -1,14 +1,11 @@
 [project]
 name = "waltti-analyzer"
-version = "0.1.0"
+version = "0.2.0"
 description = "Bus stop timeliness analyzer for Digitransit Waltti API"
 requires-python = ">=3.11"
 dependencies = [
-    "flask>=3.0,<4.0",
+    "azure-functions>=1.18.0,<2.0",
     "requests>=2.31,<3.0",
-    "APScheduler>=3.10,<4.0",
-    "gunicorn>=22.0,<23.0",
-    "tabulate>=0.9.0",
     "python-dotenv>=1.0.0",
 ]
 

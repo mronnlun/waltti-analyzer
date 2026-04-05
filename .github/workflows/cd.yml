@@ -27,7 +27,7 @@ jobs:
         with:
           python-version: "3.12"
           cache: pip
-      - run: pip install -r requirements.txt && pip install pytest
+      - run: pip install -r api/requirements.txt && pip install pytest
       - run: pytest tests/ -v
         env:
           DIGITRANSIT_API_KEY: test-key
@@ -36,7 +36,8 @@ jobs:
     needs: test
     runs-on: ubuntu-latest
     outputs:
-      appName: ${{ steps.deploy.outputs.appName }}
+      functionAppName: ${{ steps.deploy.outputs.functionAppName }}
+      staticWebAppName: ${{ steps.deploy.outputs.staticWebAppName }}
     steps:
       - uses: actions/checkout@v5
 
@@ -67,11 +68,11 @@ jobs:
             --parameters env=${{ env.AZURE_ENV }} \
             --parameters "digitransitApiKey=$DIGITRANSIT_API_KEY" \
             --parameters "sqlAdminPassword=$SQL_ADMIN_PASSWORD" \
-            --parameters skuName=B1 \
             --query 'properties.outputs' -o json)
-          echo "appName=$(echo $result | jq -r '.appName.value')" >> $GITHUB_OUTPUT
+          echo "functionAppName=$(echo $result | jq -r '.functionAppName.value')" >> $GITHUB_OUTPUT
+          echo "staticWebAppName=$(echo $result | jq -r '.staticWebAppName.value')" >> $GITHUB_OUTPUT
 
-  deploy-app:
+  deploy-api:
     needs: deploy-infra
     runs-on: ubuntu-latest
     steps:
@@ -82,12 +83,12 @@ jobs:
           python-version: "3.12"
           cache: pip
 
-      - name: Build deployment package
+      - name: Build Function App package
         run: |
-          python -m venv antenv
-          source antenv/bin/activate
-          pip install -r requirements.txt
-          zip -r deploy.zip . -x '.git/*' '.github/*' '.venv/*' 'tests/*' '.pytest*' '*.pyc' '__pycache__/*'
+          cd api
+          pip install --target=".python_packages/lib/site-packages" -r requirements.txt
+          cd ..
+          zip -r api-deploy.zip api/ -x 'api/local.settings.json*' 'api/__pycache__/*'
 
       - name: Azure Login
         uses: azure/login@v3
@@ -96,10 +97,42 @@ jobs:
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
-      - name: Deploy to App Service
+      - name: Deploy Function App
         run: |
-          az webapp deploy \
+          az functionapp deployment source config-zip \
             --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
-            --name ${{ needs.deploy-infra.outputs.appName }} \
-            --src-path deploy.zip \
-            --type zip
+            --name ${{ needs.deploy-infra.outputs.functionAppName }} \
+            --src api-deploy.zip
+
+  deploy-frontend:
+    needs: deploy-infra
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Azure Login
+        uses: azure/login@v3
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Get SWA deployment token
+        id: swa-token
+        run: |
+          token=$(az staticwebapp secrets list \
+            --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
+            --name ${{ needs.deploy-infra.outputs.staticWebAppName }} \
+            --query 'properties.apiKey' -o tsv)
+          echo "::add-mask::$token"
+          echo "token=$token" >> $GITHUB_OUTPUT
+
+      - name: Deploy Static Web App
+        uses: Azure/static-web-apps-deploy@v1
+        with:
+          azure_static_web_apps_api_token: ${{ steps.swa-token.outputs.token }}
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+          action: upload
+          app_location: frontend
+          skip_app_build: true
+          skip_api_build: true

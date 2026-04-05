@@ -1,13 +1,13 @@
 import time
 
-from app.analyzer import (
+from shared.analyzer import (
     format_delay,
     get_delay_by_hour,
     get_route_breakdown,
     get_summary,
     parse_time,
 )
-from app.db import upsert_observations_batch, upsert_trips_batch
+from shared.db import upsert_observations_batch, upsert_trips_batch
 
 
 def _setup_trips_and_obs(db, obs_specs):

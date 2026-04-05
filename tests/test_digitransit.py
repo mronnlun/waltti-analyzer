@@ -1,7 +1,7 @@
 from datetime import date
 from unittest.mock import MagicMock, patch
 
-from app.digitransit import DigitransitClient
+from shared.digitransit import DigitransitClient
 
 
 def _mock_response(data):

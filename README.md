@@ -1,101 +1,113 @@
 # Waltti Analyzer
 
-A web application that collects and analyzes the punctuality of buses at stops in Vaasa, Finland. It polls the [Digitransit Waltti GraphQL API](https://digitransit.fi/en/developers/) during service hours, stores timetable and realtime delay data in SQLite, and displays timeliness reports in a dashboard.
+Bus punctuality analysis for Vaasa, Finland. Collects realtime delay data from the [Digitransit Waltti API](https://digitransit.fi/en/developers/) and provides a web dashboard showing how well buses stay on schedule.
 
-The current direction is feed-wide coverage for Vaasa: discover the full stop network, seed daily schedules, and capture realtime outcomes while buses are running. The default stop is only a convenient UI starting point.
+## Architecture
 
-## Why a scheduler?
+- **Backend**: Azure Functions (Python, consumption plan) — `api/`
+- **Frontend**: Static SPA (HTML/CSS/JS) — `frontend/`
+- **Database**: SQLite locally, Azure SQL in production
+- **Infrastructure**: Bicep templates in `infra/`
 
-The Digitransit API is a live-data API — realtime delay values only exist while buses are actively running. Once a service day passes, everything reverts to static schedule data. The app must actively poll during service hours to capture actual delay values before they disappear.
+### How it works
 
-## Setup
+1. **Timer-triggered function** (`sync_bus_data`) runs every 3 minutes:
+   - **Realtime polling** — every invocation captures current GPS-based delays before they disappear from the API
+   - **Daily collection** — at 03:00 and 23:00 Helsinki time, fetches full day schedules
+   - **Weekly discovery** — Monday 02:00 Helsinki time, discovers all stops/routes for the feed
+2. **HTTP-triggered functions** serve as the REST API backend for the SPA
+3. **SPA frontend** fetches data from the API and renders the dashboard, observations, and stops pages
+
+## Quick Start (local development)
+
+### Prerequisites
+
+- Python 3.11+
+- [Azure Functions Core Tools](https://learn.microsoft.com/en-us/azure/azure-functions/functions-run-local) (v4)
+- A Digitransit API key (free at https://portal.digitransit.fi)
+
+### Setup
 
 ```bash
-# Clone and create virtual environment
-git clone https://github.com/mronnlun/waltti-analyzer.git
-cd waltti-analyzer
+# Create and activate a virtual environment
 python -m venv .venv
-source .venv/bin/activate    # Linux/Mac
-# .venv\Scripts\activate     # Windows
+source .venv/bin/activate    # or .venv\Scripts\activate on Windows
 
 # Install dependencies
-pip install -r requirements.txt
-pip install -e ".[dev]"      # for dev tools (pytest, ruff)
+pip install -r api/requirements.txt
+pip install -e ".[dev]"
 
-# Configure
-cp .env.example .env
-# Edit .env and add your Digitransit API key
-# Get one at https://portal-api.digitransit.fi
+# Configure environment
+cp api/local.settings.json.example api/local.settings.json
+# Edit api/local.settings.json and add your DIGITRANSIT_API_KEY
 ```
 
-## Running
+### Run the backend
 
 ```bash
-# Development server
-flask run --debug
-
-# Production (Linux)
-gunicorn --config gunicorn.conf.py "app:create_app()"
-
-# Docker
-docker compose up
+cd api
+func start
 ```
 
-The dashboard is available at `http://localhost:5000` (dev) or `http://localhost:8000` (production/Docker).
+The API will be available at `http://localhost:7071/api/`.
 
-## How it works
+### Run the frontend
 
-1. **Stop discovery**: Finds the stops and routes in the configured feed so collection can cover the network instead of a single manually entered stop.
-2. **Daily collection** (automatic at 03:00): Fetches the full day's scheduled timetable from the API and stores it in the database.
-3. **Realtime polling** (automatic during service hours): Captures actual bus delays as buses run, updating the stored schedule data with real delay values before they disappear from the API.
-4. **Dashboard**: Displays summary statistics, delay charts by hour, per-route breakdowns, and recent observations.
+Open `frontend/index.html` in a browser, or serve it with any static file server:
 
-You can also trigger collection manually from the dashboard or via the JSON API.
+```bash
+cd frontend
+python -m http.server 8080
+```
+
+Then open `http://localhost:8080`. By default the SPA calls `/api/*` — configure `window.WALTTI_API_BASE` in the browser console if the Function App runs on a different port.
+
+## Running Tests
+
+```bash
+pytest
+ruff check .
+```
 
 ## Configuration
 
 | Variable | Default | Description |
 |---|---|---|
-| `DIGITRANSIT_API_KEY` | *(required)* | API key from portal-api.digitransit.fi |
-| `FEED_ID` | `Vaasa` | Feed prefix used for stop discovery and collection |
-| `DEFAULT_STOP_ID` | `Vaasa:309392` | Default GTFS stop ID to show first in the UI |
-| `DATABASE_PATH` | `data/waltti.db` | Path to SQLite database file |
-| `POLL_INTERVAL_SECONDS` | `300` | Seconds between realtime polls |
-| `POLL_START_HOUR` | `5` | Hour (Helsinki time) to start polling |
-| `POLL_END_HOUR` | `24` | Hour (Helsinki time) to stop polling |
+| `DIGITRANSIT_API_KEY` | — | Required. API key for Digitransit |
+| `FEED_ID` | `Vaasa` | GTFS feed to collect data for |
+| `DEFAULT_STOP_ID` | `Vaasa:309392` | Default stop shown in the UI |
+| `DATABASE_PATH` | `data/waltti.db` | SQLite database path (local only) |
 
-Some older deployment files still refer to `TARGET_STOP_ID`. The Python application uses `DEFAULT_STOP_ID`.
-
-## Deployment
-
-### Generic (Docker)
-
-```bash
-docker build -t waltti-analyzer .
-docker run -p 8000:8000 -e DIGITRANSIT_API_KEY=your_key -v waltti-data:/app/data waltti-analyzer
-```
-
-### Azure App Service
-
-1. Create a Python 3.11+ App Service
-2. Set `DIGITRANSIT_API_KEY` as an App Setting
-3. Set startup command: `gunicorn --config gunicorn.conf.py "app:create_app()"`
-4. Deploy from GitHub (or use the Docker image)
-5. Enable "Always On" (Basic tier+) to keep the scheduler running
-6. For persistent SQLite: mount Azure Files to `/app/data`
+In Azure, the database connection string is injected via the `DATABASE` connection string setting.
 
 ## API Endpoints
 
-| Endpoint | Method | Description |
+| Method | Endpoint | Description |
 |---|---|---|
-| `/api/collect/daily` | POST | Trigger daily schedule collection |
-| `/api/collect/realtime` | POST | Trigger single realtime poll |
-| `/api/status` | GET | Scheduler and collection status |
-| `/api/observations?date=YYYY-MM-DD` | GET | Raw observations as JSON |
-| `/api/summary?from=YYYY-MM-DD&to=YYYY-MM-DD` | GET | Summary statistics as JSON |
+| GET | `/api/status` | Collection status and feed info |
+| GET | `/api/stops` | List all discovered stops |
+| GET | `/api/routes` | List all routes with observations |
+| GET | `/api/routes-for-stop?stop_id=X` | Routes for a specific stop |
+| GET | `/api/observations?stop_id=X&from=Y&to=Z` | Observations for a stop and date range |
+| GET | `/api/latest-observations` | 100 most recent GPS observations |
+| GET | `/api/summary?stop_id=X&from=Y&to=Z` | Summary statistics |
+| GET | `/api/route-breakdown?stop_id=X&from=Y&to=Z` | Per-route statistics |
+| GET | `/api/delay-by-hour?stop_id=X&from=Y&to=Z` | Average delay by hour |
+| POST | `/api/collect/daily` | Trigger daily collection |
+| POST | `/api/collect/realtime` | Trigger realtime poll |
+| POST | `/api/discover` | Trigger stop discovery |
+
+## Deployment
+
+The project deploys to Azure via GitHub Actions (`.github/workflows/cd.yml`):
+
+1. **Infrastructure** — Bicep template creates a consumption-plan Function App, Static Web App, Azure SQL, and supporting resources
+2. **API** — Function App code is deployed via zip deployment
+3. **Frontend** — Static files are deployed to Azure Static Web Apps
 
 ## Notes
 
-- The default stop (Vaasa:309392, Gerbynmäentie / Yttergårdinpolku) is useful for local testing, but the intended collection scope is the whole Vaasa feed.
-- Public holidays (e.g. Good Friday) have no bus service — the app detects this and logs it.
-- Helsinki timezone is UTC+2 in winter, UTC+3 in summer. DST changes are handled automatically.
+- The Digitransit API only exposes realtime delays while buses are running. Once service ends for the day, delay data disappears. The timer function captures this data before it is lost.
+- Delays beyond ±30 minutes are flagged as suspect GPS data and excluded from statistics.
+- All times are stored in UTC; display output uses Europe/Helsinki timezone.
+- Holiday/no-service detection: all patterns return empty stoptimes → logged as no-service.

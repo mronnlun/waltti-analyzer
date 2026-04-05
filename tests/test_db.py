@@ -1,6 +1,6 @@
 import time
 
-from app.db import (
+from shared.db import (
     get_latest_collection,
     get_observations,
     get_recent_observations,

@@ -13,3 +13,5 @@ dist/
 build/
 .claude/settings.local.json
 .vscode/
+api/local.settings.json
+.python_packages/
