@@ -464,7 +464,9 @@ def get_recent_observations(
 
 
 def get_latest_observations(
-    db: sqlite3.Connection, limit: int = 100, feed_id: str | None = None,
+    db: sqlite3.Connection,
+    limit: int = 100,
+    feed_id: str | None = None,
 ) -> list[sqlite3.Row]:
     """Return the most recently queried realtime observations (GPS only)."""
     query = f"""SELECT {_OBS_COLUMNS}, s.name AS stop_name

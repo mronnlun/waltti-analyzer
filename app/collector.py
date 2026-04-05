@@ -192,9 +192,7 @@ def collect_daily(
 REALTIME_BATCH_SIZE = 50
 
 
-def _process_realtime_batch(
-    stops_data: list[dict], now: int
-) -> tuple[dict, list, int]:
+def _process_realtime_batch(stops_data: list[dict], now: int) -> tuple[dict, list, int]:
     """Parse a batch of stop data into trips and observations."""
     trips = {}
     observations = []
@@ -284,9 +282,7 @@ def poll_realtime_once(
             stops_data = client.fetch_bulk_realtime(batch_ids)
             total_stops_polled += len(stops_data)
 
-            trips, observations, stops_with_data = _process_realtime_batch(
-                stops_data, now
-            )
+            trips, observations, stops_with_data = _process_realtime_batch(stops_data, now)
 
             if trips:
                 upsert_trips_batch(db, list(trips.values()))
@@ -305,8 +301,7 @@ def poll_realtime_once(
             departures_found=total_updated,
         )
         logger.info(
-            "Realtime poll: %d departures across %d/%d stops"
-            " (%d batches)",
+            "Realtime poll: %d departures across %d/%d stops (%d batches)",
             total_updated,
             total_stops_with_data,
             total_stops_polled,

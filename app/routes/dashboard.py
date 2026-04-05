@@ -54,9 +54,7 @@ def index():
 
     recent = []
     if from_date and to_date and stop_id:
-        recent = get_observations(
-            db, stop_id, from_date, to_date, route, time_from, time_to
-        )
+        recent = get_observations(db, stop_id, from_date, to_date, route, time_from, time_to)
 
     return render_template(
         "dashboard.html",
