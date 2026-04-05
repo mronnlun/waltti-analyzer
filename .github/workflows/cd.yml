@@ -56,6 +56,7 @@ jobs:
         env:
           SQL_ADMIN_PASSWORD: ${{ secrets.SQL_ADMIN_PASSWORD }}
           DIGITRANSIT_API_KEY: ${{ secrets.DIGITRANSIT_API_KEY }}
+          NOTIFICATION_EMAIL: ${{ secrets.NOTIFICATION_EMAIL }}
         run: |
           result=$(az deployment group create \
             --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
@@ -64,6 +65,7 @@ jobs:
             --parameters env=${{ env.AZURE_ENV }} \
             --parameters "digitransitApiKey=$DIGITRANSIT_API_KEY" \
             --parameters "sqlAdminPassword=$SQL_ADMIN_PASSWORD" \
+            --parameters "notificationEmail=$NOTIFICATION_EMAIL" \
             --query 'properties.outputs' -o json)
           echo "functionAppName=$(echo $result | jq -r '.functionAppName.value')" >> $GITHUB_OUTPUT
           echo "staticWebAppName=$(echo $result | jq -r '.staticWebAppName.value')" >> $GITHUB_OUTPUT

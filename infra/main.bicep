@@ -26,6 +26,12 @@ param sqlAdminLogin string = 'walttidbadmin'
 @secure()
 param sqlAdminPassword string
 
+@description('Monthly cost budget in the billing currency (e.g. EUR)')
+param budgetAmount int = 30
+
+@description('Email address for budget alert notifications')
+param notificationEmail string
+
 // SQL Server names must be globally unique and lowercase
 var sqlServerName = toLower('${projectName}-${env}-sql')
 var storageName = toLower(replace('${projectName}${env}st', '-', ''))
@@ -204,6 +210,58 @@ resource staticWebApp 'Microsoft.Web/staticSites@2023-12-01' = {
   properties: {
     buildProperties: {
       skipGithubActionWorkflowGeneration: true
+    }
+  }
+}
+
+// --- Diagnostic settings: send Function App console & platform logs to Log Analytics ---
+resource functionAppDiagnostics 'Microsoft.Insights/diagnosticSettings@2021-05-01-preview' = {
+  name: '${projectName}-${env}-func-diag'
+  scope: functionApp
+  properties: {
+    workspaceId: logAnalytics.id
+    logs: [
+      {
+        category: 'FunctionAppLogs'
+        enabled: true
+      }
+    ]
+    metrics: [
+      {
+        category: 'AllMetrics'
+        enabled: true
+      }
+    ]
+  }
+}
+
+// --- Cost budget (monthly, scoped to resource group) ---
+resource budget 'Microsoft.Consumption/budgets@2023-11-01' = {
+  name: '${projectName}-${env}-budget'
+  properties: {
+    timePeriod: {
+      startDate: '2025-01-01'
+    }
+    timeGrain: 'Monthly'
+    amount: budgetAmount
+    category: 'Cost'
+    notifications: {
+      actual80: {
+        enabled: true
+        operator: 'GreaterThanOrEqualTo'
+        threshold: 80
+        contactEmails: [
+          notificationEmail
+        ]
+      }
+      actual100: {
+        enabled: true
+        operator: 'GreaterThanOrEqualTo'
+        threshold: 100
+        contactEmails: [
+          notificationEmail
+        ]
+      }
     }
   }
 }
