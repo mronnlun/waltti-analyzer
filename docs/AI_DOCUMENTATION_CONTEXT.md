@@ -5,7 +5,7 @@
 - Build a usable historical punctuality dataset for Vaasa Waltti buses.
 - Capture whether each bus trip was early, on time, late, or canceled at each stop for each service day.
 - Work around the Digitransit limitation that realtime delays disappear after service ends by collecting data while buses are running.
-- Keep using the current SQLite schema as the storage boundary unless there is a clear reason to expand it.
+- Keep using the current SQLite schema locally; Azure SQL is used in the production Azure deployment.
 
 ## Current Direction
 
@@ -35,3 +35,4 @@
 - The current Python app config uses `FEED_ID` and `DEFAULT_STOP_ID`, while some older files still refer to `TARGET_STOP_ID`.
 - The SQLite schema includes `trips`; schema descriptions should not say there are only three tables.
 - Older wording may imply the app only monitors one stop. The current goal is feed-wide coverage with a default stop used only as a convenient UI starting point.
+- The database backend differs by environment: SQLite (`sqlite3`) locally and Azure SQL (ODBC) in production. Do not assume SQLite-only when working on deployment or database connection code.
