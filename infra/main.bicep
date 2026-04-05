@@ -139,7 +139,7 @@ resource webApp 'Microsoft.Web/sites@2023-12-01' = {
     httpsOnly: true
     siteConfig: {
       linuxFxVersion: 'PYTHON|3.12'
-      appCommandLine: 'gunicorn --config gunicorn.conf.py "app:create_app()"'
+      appCommandLine: 'antenv/bin/gunicorn --config gunicorn.conf.py "app:create_app()"'
       alwaysOn: skuName != 'F1'
       connectionStrings: [
         {
@@ -163,11 +163,11 @@ resource webApp 'Microsoft.Web/sites@2023-12-01' = {
         }
         {
           name: 'SCM_DO_BUILD_DURING_DEPLOYMENT'
-          value: 'true'
+          value: 'false'
         }
         {
-          name: 'WEBSITE_STARTUP_FILE'
-          value: 'gunicorn --config gunicorn.conf.py "app:create_app()"'
+          name: 'DISABLE_ORYX_BUILD'
+          value: 'true'
         }
         {
           name: 'APPLICATIONINSIGHTS_CONNECTION_STRING'
