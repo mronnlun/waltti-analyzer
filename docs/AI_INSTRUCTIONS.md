@@ -48,7 +48,9 @@ app/
 - All times stored in DB as UTC unix timestamps or seconds-since-midnight (as from API)
 - All display output uses Europe/Helsinki timezone
 - The current code uses upserts keyed on `(stop_gtfs_id, trip_gtfs_id, service_date)`; preserve the meaning of the best known observation when changing collector behavior
-- Run `ruff check` and `ruff format` before committing
+- **Always work on a feature branch — never commit directly to `main`.**
+- **Always open a pull request** for your branch when the work is ready.
+- Run `ruff check` and `ruff format` before committing; a `PreToolUse` hook enforces this automatically before every `git push`.
 - Tests use `pytest` with `TestConfig` (in-memory SQLite)
 
 ## Key API Details
