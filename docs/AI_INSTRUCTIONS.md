@@ -14,12 +14,12 @@ The current direction is feed-wide coverage for Vaasa. A default stop may still 
 ## Tech Stack
 
 - **Python 3.11+** with **Flask** web framework
-- **SQLite** database (stdlib `sqlite3`, WAL mode)
+- **SQLite** database locally (stdlib `sqlite3`, WAL mode); **Azure SQL** (via pyodbc/ODBC Driver 18) in production on Azure App Service
 - **APScheduler** for background polling (in-process, no external broker)
 - **Jinja2** server-rendered templates with **Chart.js** (CDN) for charts
 - **Gunicorn** + **Docker** for deployment
 - **zoneinfo** (stdlib) for timezone handling — Europe/Helsinki
-- No ORM — plain SQL via `sqlite3`
+- No ORM — plain SQL via `sqlite3` (locally) or `pyodbc` (Azure)
 - No frontend build step — all JS via CDN
 
 ## Architecture
@@ -52,7 +52,6 @@ app/
 - **Always open a pull request** for your branch when the work is ready.
 - Run `ruff check` and `ruff format` before committing; a `PreToolUse` hook enforces this automatically before every `git push`.
 - Tests use `pytest` with `TestConfig` (in-memory SQLite)
-
 ## Key API Details
 
 - **Endpoint**: `POST https://api.digitransit.fi/routing/v2/waltti/gtfs/v1`
@@ -70,10 +69,14 @@ app/
 | `DIGITRANSIT_API_KEY` | — | Yes |
 | `FEED_ID` | `Vaasa` | No |
 | `DEFAULT_STOP_ID` | `Vaasa:309392` | No |
-| `DATABASE_PATH` | `data/waltti.db` | No |
+| `DATABASE_PATH` | `data/waltti.db` | No (local only) |
 | `POLL_INTERVAL_SECONDS` | `300` | No |
 | `POLL_START_HOUR` | `5` | No |
 | `POLL_END_HOUR` | `24` | No |
+
+**Database per environment:**
+- **Local development**: SQLite at `DATABASE_PATH` (default `data/waltti.db`). No extra setup required.
+- **Azure (production)**: Azure SQL Server. The connection string is set via the `DATABASE` Azure App Service connection string (injected by Bicep). Do not set `DATABASE_PATH` in production.
 
 Some older deployment-facing files still refer to `TARGET_STOP_ID`; prefer `DEFAULT_STOP_ID` in Python app code and update stale references when you touch them.
 
