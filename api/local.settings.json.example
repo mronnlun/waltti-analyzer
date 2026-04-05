@@ -1,0 +1,14 @@
+{
+  "IsEncrypted": false,
+  "Values": {
+    "AzureWebJobsStorage": "UseDevelopmentStorage=true",
+    "FUNCTIONS_WORKER_RUNTIME": "python",
+    "DIGITRANSIT_API_KEY": "your_api_key_here",
+    "FEED_ID": "Vaasa",
+    "DEFAULT_STOP_ID": "Vaasa:309392",
+    "DATABASE_PATH": "data/waltti.db"
+  },
+  "Host": {
+    "CORS": "*"
+  }
+}

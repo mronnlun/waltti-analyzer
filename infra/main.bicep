@@ -16,12 +16,8 @@ param location string = resourceGroup().location
 @secure()
 param digitransitApiKey string
 
-@description('Target stop GTFS ID')
-param targetStopId string = 'Vaasa:309392'
-
-@description('App Service Plan SKU')
-@allowed(['F1', 'B1', 'B2', 'S1'])
-param skuName string = 'B1'
+@description('Default stop GTFS ID')
+param defaultStopId string = 'Vaasa:309392'
 
 @description('SQL admin login name')
 param sqlAdminLogin string = 'walttidbadmin'
@@ -32,14 +28,30 @@ param sqlAdminPassword string
 
 // SQL Server names must be globally unique and lowercase
 var sqlServerName = toLower('${projectName}-${env}-sql')
+var storageName = toLower(replace('${projectName}${env}st', '-', ''))
 
-// --- App Service Plan ---
-resource appServicePlan 'Microsoft.Web/serverfarms@2023-12-01' = {
+// --- Storage Account (required for Function App) ---
+resource storageAccount 'Microsoft.Storage/storageAccounts@2023-05-01' = {
+  name: storageName
+  location: location
+  sku: {
+    name: 'Standard_LRS'
+  }
+  kind: 'StorageV2'
+  properties: {
+    supportsHttpsTrafficOnly: true
+    minimumTlsVersion: 'TLS1_2'
+  }
+}
+
+// --- Consumption App Service Plan (serverless) ---
+resource functionPlan 'Microsoft.Web/serverfarms@2023-12-01' = {
   name: '${projectName}-${env}-plan'
   location: location
-  kind: 'linux'
+  kind: 'functionapp'
   sku: {
-    name: skuName
+    name: 'Y1'
+    tier: 'Dynamic'
   }
   properties: {
     reserved: true // Required for Linux
@@ -130,17 +142,16 @@ resource appInsights 'Microsoft.Insights/components@2020-02-02' = {
   }
 }
 
-// --- App Service ---
-resource webApp 'Microsoft.Web/sites@2023-12-01' = {
-  name: '${projectName}-${env}-app'
+// --- Function App (Consumption plan) ---
+resource functionApp 'Microsoft.Web/sites@2023-12-01' = {
+  name: '${projectName}-${env}-func'
   location: location
+  kind: 'functionapp,linux'
   properties: {
-    serverFarmId: appServicePlan.id
+    serverFarmId: functionPlan.id
     httpsOnly: true
     siteConfig: {
       linuxFxVersion: 'PYTHON|3.12'
-      appCommandLine: 'antenv/bin/gunicorn --config gunicorn.conf.py "app:create_app()"'
-      alwaysOn: skuName != 'F1'
       connectionStrings: [
         {
           name: 'DATABASE'
@@ -150,56 +161,57 @@ resource webApp 'Microsoft.Web/sites@2023-12-01' = {
       ]
       appSettings: [
         {
+          name: 'AzureWebJobsStorage'
+          value: 'DefaultEndpointsProtocol=https;AccountName=${storageAccount.name};EndpointSuffix=${az.environment().suffixes.storage};AccountKey=${storageAccount.listKeys().keys[0].value}'
+        }
+        {
+          name: 'FUNCTIONS_EXTENSION_VERSION'
+          value: '~4'
+        }
+        {
+          name: 'FUNCTIONS_WORKER_RUNTIME'
+          value: 'python'
+        }
+        {
           name: 'DIGITRANSIT_API_KEY'
           value: digitransitApiKey
         }
         {
-          name: 'TARGET_STOP_ID'
-          value: targetStopId
-        }
-        {
-          name: 'DATABASE_URL'
-          value: 'mssql+pyodbc://${sqlAdminLogin}:${sqlAdminPassword}@${sqlServer.properties.fullyQualifiedDomainName}:1433/${sqlDatabase.name}?driver=ODBC+Driver+18+for+SQL+Server&Encrypt=yes&TrustServerCertificate=no&Connection+Timeout=30'
-        }
-        {
-          name: 'SCM_DO_BUILD_DURING_DEPLOYMENT'
-          value: 'false'
-        }
-        {
-          name: 'DISABLE_ORYX_BUILD'
-          value: 'true'
+          name: 'DEFAULT_STOP_ID'
+          value: defaultStopId
         }
         {
           name: 'APPLICATIONINSIGHTS_CONNECTION_STRING'
           value: appInsights.properties.ConnectionString
+        }
+        {
+          name: 'SCM_DO_BUILD_DURING_DEPLOYMENT'
+          value: 'true'
         }
       ]
     }
   }
 }
 
-// --- App Service Logging (console logs to filesystem) ---
-resource webAppLogs 'Microsoft.Web/sites/config@2023-12-01' = {
-  parent: webApp
-  name: 'logs'
+// --- Static Web App for SPA frontend ---
+resource staticWebApp 'Microsoft.Web/staticSites@2023-12-01' = {
+  name: '${projectName}-${env}-swa'
+  location: location
+  sku: {
+    name: 'Free'
+    tier: 'Free'
+  }
   properties: {
-    applicationLogs: {
-      fileSystem: {
-        level: 'Information'
-      }
-    }
-    httpLogs: {
-      fileSystem: {
-        retentionInMb: 35
-        retentionInDays: 3
-        enabled: true
-      }
+    buildProperties: {
+      skipGithubActionWorkflowGeneration: true
     }
   }
 }
 
 // --- Outputs ---
-output appUrl string = 'https://${webApp.properties.defaultHostName}'
-output appName string = webApp.name
+output functionAppName string = functionApp.name
+output functionAppUrl string = 'https://${functionApp.properties.defaultHostName}'
+output staticWebAppName string = staticWebApp.name
+output staticWebAppUrl string = 'https://${staticWebApp.properties.defaultHostname}'
 output sqlServerFqdn string = sqlServer.properties.fullyQualifiedDomainName
 output resourceGroupName string = resourceGroup().name

@@ -1,0 +1,14 @@
+import os
+
+from dotenv import load_dotenv
+
+load_dotenv()
+
+DIGITRANSIT_API_KEY = os.environ.get("DIGITRANSIT_API_KEY", "")
+DIGITRANSIT_API_URL = os.environ.get(
+    "DIGITRANSIT_API_URL",
+    "https://api.digitransit.fi/routing/v2/waltti/gtfs/v1",
+)
+FEED_ID = os.environ.get("FEED_ID", "Vaasa")
+DEFAULT_STOP_ID = os.environ.get("DEFAULT_STOP_ID", "Vaasa:309392")
+DATABASE_PATH = os.environ.get("DATABASE_PATH", "data/waltti.db")
