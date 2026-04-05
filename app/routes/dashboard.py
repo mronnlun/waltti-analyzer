@@ -7,6 +7,7 @@ from app.analyzer import get_delay_by_hour, get_route_breakdown, get_summary, pa
 from app.db import (
     get_all_stops,
     get_db,
+    get_latest_observations,
     get_recent_observations,
     get_routes_for_stop,
 )
@@ -67,6 +68,17 @@ def index():
         routes_breakdown=routes_breakdown,
         hourly_delays=hourly_delays,
         recent=recent,
+    )
+
+
+@dashboard_bp.route("/observations")
+def latest_observations():
+    db = get_db()
+    feed_id = current_app.config["FEED_ID"]
+    observations = get_latest_observations(db, limit=100, feed_id=feed_id)
+    return render_template(
+        "observations.html",
+        observations=observations,
     )
 
 
