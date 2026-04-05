@@ -20,3 +20,17 @@ jobs:
 
       - name: Run tests
         run: dotnet test tests/WalttiAnalyzer.Tests/WalttiAnalyzer.Tests.csproj --verbosity normal
+
+      - name: Publish Function App
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        run: |
+          dotnet publish api/WalttiAnalyzer.Functions/WalttiAnalyzer.Functions.csproj \
+            --configuration Release \
+            --output ./publish
+
+      - name: Upload build artifact
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        uses: actions/upload-artifact@v4
+        with:
+          name: function-app
+          path: ./publish

@@ -1,7 +1,9 @@
 name: CD — Deploy to Azure
 
 on:
-  push:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
     branches: [main]
   workflow_dispatch:
 
@@ -12,6 +14,7 @@ concurrency:
 permissions:
   id-token: write
   contents: read
+  actions: read
 
 env:
   AZURE_PROJECT_NAME: WalttiAnalyzer
@@ -19,18 +22,9 @@ env:
   AZURE_RESOURCE_GROUP: WalttiAnalyzer-prod-rg
 
 jobs:
-  test:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-dotnet@v4
-        with:
-          dotnet-version: "8.0.x"
-      - run: dotnet test tests/WalttiAnalyzer.Tests/WalttiAnalyzer.Tests.csproj --verbosity normal
-
   deploy-infra:
-    needs: test
     runs-on: ubuntu-latest
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
     outputs:
       functionAppName: ${{ steps.deploy.outputs.functionAppName }}
       staticWebAppName: ${{ steps.deploy.outputs.staticWebAppName }}
@@ -74,18 +68,33 @@ jobs:
     needs: deploy-infra
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - name: Download build artifact from CI
+        if: ${{ github.event_name == 'workflow_run' }}
+        uses: actions/download-artifact@v4
+        with:
+          name: function-app
+          path: ./publish
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build artifact (manual dispatch)
+        if: ${{ github.event_name == 'workflow_dispatch' }}
+        uses: actions/checkout@v5
 
       - uses: actions/setup-dotnet@v4
+        if: ${{ github.event_name == 'workflow_dispatch' }}
         with:
           dotnet-version: "8.0.x"
 
-      - name: Publish Function App
+      - name: Publish Function App (manual dispatch)
+        if: ${{ github.event_name == 'workflow_dispatch' }}
         run: |
           dotnet publish api/WalttiAnalyzer.Functions/WalttiAnalyzer.Functions.csproj \
             --configuration Release \
             --output ./publish
-          cd publish && zip -r ../api-deploy.zip .
+
+      - name: Create deployment zip
+        run: cd publish && zip -r ../api-deploy.zip .
 
       - name: Azure Login
         uses: azure/login@v3
