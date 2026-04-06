@@ -33,8 +33,8 @@ param sqlAdminPassword string
 @description('Monthly cost budget in the billing currency (e.g. EUR)')
 param budgetAmount int = 30
 
-@description('Email address for budget alert notifications')
-param notificationEmail string
+@description('Email address for budget alert notifications (leave empty to skip budget alerts)')
+param notificationEmail string = ''
 
 // SQL Server names must be globally unique and lowercase
 var sqlServerName = toLower('${projectName}-${env}-sql')
@@ -58,7 +58,6 @@ resource storageAccount 'Microsoft.Storage/storageAccounts@2023-05-01' = {
 resource functionPlan 'Microsoft.Web/serverfarms@2023-12-01' = {
   name: '${projectName}-${env}-plan'
   location: location
-  kind: 'functionapp'
   sku: {
     name: 'Y1'
     tier: 'Dynamic'
@@ -240,7 +239,7 @@ resource functionAppDiagnostics 'Microsoft.Insights/diagnosticSettings@2021-05-0
 }
 
 // --- Cost budget (monthly, scoped to resource group) ---
-resource budget 'Microsoft.Consumption/budgets@2023-11-01' = {
+resource budget 'Microsoft.Consumption/budgets@2023-11-01' = if (!empty(notificationEmail)) {
   name: '${projectName}-${env}-budget'
   properties: {
     timePeriod: {
