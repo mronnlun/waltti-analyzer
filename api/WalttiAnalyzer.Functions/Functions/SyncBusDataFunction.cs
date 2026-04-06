@@ -26,12 +26,13 @@ public class SyncBusDataFunction
     }
 
     /// <summary>
-    /// Runs every 3 minutes. Always polls realtime data.
-    /// At 03:xx/23:xx runs daily collection. Monday 02:xx runs weekly discovery.
+    /// Runs every 5 minutes. Always polls realtime data.
+    /// At 03:xx/23:xx runs daily collection.
+    /// Discovers stops once per hour, or immediately if not yet fetched today.
     /// </summary>
     // NCRONTAB: sec min hour day month dayOfWeek
     [Function("SyncBusData")]
-    public async Task Run([TimerTrigger("0 */3 * * * *")] TimerInfo timer)
+    public async Task Run([TimerTrigger("0 */5 * * * *")] TimerInfo timer)
     {
         var apiUrl = _settings.DigitransitApiUrl;
         var apiKey = _settings.DigitransitApiKey;
@@ -49,18 +50,42 @@ public class SyncBusDataFunction
         var now = TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, HelsinkiTz);
         int hour = now.Hour;
         int minute = now.Minute;
-        int weekday = (int)now.DayOfWeek; // 0 = Sunday in .NET
 
-        // Weekly discovery: Monday 02:00–02:02
-        if (weekday == 1 && hour == 2 && minute < 3)
+        // Stop discovery: once per hour, or immediately if not yet fetched today
+        bool shouldDiscover = false;
+        using (var conn = _db.Connect(dbPath))
         {
-            _logger.LogInformation("Running weekly stop discovery");
+            var lastDiscovery = _db.GetLatestCollection(conn, feedId, "discover");
+            if (lastDiscovery == null)
+            {
+                shouldDiscover = true;
+            }
+            else
+            {
+                var lastTime = DateTimeOffset.FromUnixTimeSeconds(lastDiscovery.QueriedAt);
+                var lastHelsinki = TimeZoneInfo.ConvertTime(lastTime, HelsinkiTz);
+                if (lastHelsinki.Date < now.Date)
+                {
+                    // Not yet fetched today — run immediately
+                    shouldDiscover = true;
+                }
+                else if (minute < 5)
+                {
+                    // Already fetched today — run once per hour (at the top of the hour)
+                    shouldDiscover = true;
+                }
+            }
+        }
+
+        if (shouldDiscover)
+        {
+            _logger.LogInformation("Running stop discovery");
             var result = await _collector.DiscoverStopsAsync(dbPath, apiUrl, apiKey, feedId);
             _logger.LogInformation("Discovery result: {@Result}", result);
         }
 
-        // Daily collection: 03:00–03:02 and 23:00–23:02
-        if ((hour == 3 || hour == 23) && minute < 3)
+        // Daily collection: 03:00–03:04 and 23:00–23:04
+        if ((hour == 3 || hour == 23) && minute < 5)
         {
             _logger.LogInformation("Running daily collection at {Hour}:{Minute:D2}", hour, minute);
             var result = await _collector.CollectDailyAsync(dbPath, apiUrl, apiKey, feedId: feedId);
