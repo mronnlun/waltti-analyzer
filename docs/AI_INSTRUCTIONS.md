@@ -87,11 +87,11 @@ infra/
 | `DIGITRANSIT_API_URL` | `https://api.digitransit.fi/routing/v2/waltti/gtfs/v1` | No |
 | `FEED_ID` | `Vaasa` | No |
 | `DEFAULT_STOP_ID` | `Vaasa:309392` | No |
-| `DATABASE_PATH` | `data/waltti.db` | No (local only) |
+| `DATABASE_PATH` | `data/waltti.db` | No (local SQLite only — irrelevant in Azure) |
 
-**Database per environment:**
-- **Local development**: SQLite at `DATABASE_PATH`. No extra setup required.
-- **Azure (production)**: Azure SQL Server via `DATABASE` connection string (injected by Bicep).
+**Database per environment — never confuse these:**
+- **Local development**: SQLite only. `DatabaseService` uses `Microsoft.Data.Sqlite` via `DATABASE_PATH` / `Waltti__DatabasePath`. No extra setup required.
+- **Azure (production)**: Azure SQL only. The `DATABASE` connection string is injected by Bicep (ODBC, SQL Server). `Waltti__DatabasePath` and SQLite are **not used** in Azure. Do not add `Waltti__DatabasePath` to Bicep or any production config.
 
 ## Building and Testing
 

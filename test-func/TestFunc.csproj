@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <TargetFramework>net8.0</TargetFramework>
@@ -6,11 +6,8 @@
     <OutputType>Exe</OutputType>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
-    <!-- Use the default worker indexing (gRPC-based function registration).
-         FunctionsEnableWorkerIndexing=false was tried before but caused 0 functions to be
-         listed in Azure (Linux consumption plan, WEBSITE_RUN_FROM_PACKAGE=1) even though
-         functions.metadata is generated correctly — the file-based discovery path is unreliable
-         in that environment. Default (true) uses the source-generated metadata provider via gRPC. -->
+    <!-- FunctionsEnableWorkerIndexing is intentionally NOT set here (defaults to true).
+         Standard template output from: func init with dotnet-isolated runtime. -->
   </PropertyGroup>
 
   <ItemGroup>
@@ -20,7 +17,6 @@
     <PackageReference Include="Microsoft.Azure.Functions.Worker.Sdk" Version="1.18.1" />
     <PackageReference Include="Microsoft.ApplicationInsights.WorkerService" Version="2.22.0" />
     <PackageReference Include="Microsoft.Azure.Functions.Worker.ApplicationInsights" Version="1.4.0" />
-    <PackageReference Include="Microsoft.Data.Sqlite" Version="8.0.11" />
   </ItemGroup>
 
   <ItemGroup>
