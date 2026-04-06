@@ -6,17 +6,6 @@
     <OutputType>Exe</OutputType>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
-    <!--
-      Disable worker-indexed mode to prevent duplicate function registration at startup.
-      With FunctionsEnableWorkerIndexing=true (SDK default), the FunctionMetadataLoader host extension
-      reads functions.metadata from the output dir AND the worker also responds to a gRPC
-      FunctionMetadataRequest — both return the same function list, so every function is
-      discovered twice and the second FunctionLoadRequest causes an InvalidOperationException
-      ("A function with the id X name already exists").
-      Setting this to false keeps FunctionMetadataLoader as the single discovery path and
-      suppresses the gRPC metadata auto-registration in the worker.
-    -->
-    <FunctionsEnableWorkerIndexing>false</FunctionsEnableWorkerIndexing>
   </PropertyGroup>
 
   <ItemGroup>
