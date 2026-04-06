@@ -1,0 +1,78 @@
+name: Export Azure Function Config
+
+on:
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  AZURE_RESOURCE_GROUP: WalttiAnalyzer-prod-rg
+  FUNCTION_APP_NAME: WalttiAnalyzer-prod-func
+
+jobs:
+  export-config:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Azure Login
+        uses: azure/login@v3
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Export Function App configuration
+        run: |
+          echo "=== Function App resource ==="
+          az functionapp show \
+            --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
+            --name ${{ env.FUNCTION_APP_NAME }} \
+            -o json
+
+      - name: Export App Service Plan
+        run: |
+          echo "=== App Service Plan ==="
+          PLAN_ID=$(az functionapp show \
+            --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
+            --name ${{ env.FUNCTION_APP_NAME }} \
+            --query 'appServicePlanId' -o tsv)
+          az resource show --ids "$PLAN_ID" -o json
+
+      - name: Export App Settings (non-secret)
+        run: |
+          echo "=== App Settings ==="
+          az functionapp config appsettings list \
+            --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
+            --name ${{ env.FUNCTION_APP_NAME }} \
+            -o json
+
+      - name: Export Connection Strings
+        run: |
+          echo "=== Connection Strings ==="
+          az functionapp config connection-string list \
+            --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
+            --name ${{ env.FUNCTION_APP_NAME }} \
+            -o json
+
+      - name: Export Site Config
+        run: |
+          echo "=== Site Config ==="
+          az functionapp config show \
+            --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
+            --name ${{ env.FUNCTION_APP_NAME }} \
+            -o json
+
+      - name: Export Storage Account
+        run: |
+          echo "=== Storage Accounts in resource group ==="
+          az storage account list \
+            --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
+            -o json
+
+      - name: Export all resources in resource group
+        run: |
+          echo "=== All resources in resource group ==="
+          az resource list \
+            --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
+            -o table
