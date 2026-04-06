@@ -1,0 +1,9 @@
+{
+  "profiles": {
+    "ExampleFunctionApp": {
+      "commandName": "Project",
+      "commandLineArgs": "--port 7087",
+      "launchBrowser": false
+    }
+  }
+}
