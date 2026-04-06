@@ -1,6 +1,8 @@
+using System.IO;
 using System.Text.Json;
 using Microsoft.Azure.Functions.Worker;
-using Microsoft.Azure.Functions.Worker.Http;
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using WalttiAnalyzer.Functions.Models;
@@ -15,6 +17,12 @@ public class ApiFunctions
     private readonly AnalyzerService _analyzer;
     private readonly CollectorService _collector;
     private readonly WalttiSettings _settings;
+
+    private static readonly JsonSerializerOptions JsonOptions = new()
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower,
+        DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull
+    };
 
     public ApiFunctions(ILogger<ApiFunctions> logger,
         DatabaseService db, AnalyzerService analyzer, CollectorService collector,
@@ -39,14 +47,14 @@ public class ApiFunctions
     // -----------------------------------------------------------------------
 
     [Function("Status")]
-    public HttpResponseData Status(
-        [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "status")] HttpRequestData req)
+    public IActionResult Status(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "status")] HttpRequest req)
     {
         EnsureDb();
         using var conn = _db.Connect(DbPath);
         var daily = _db.GetLatestCollection(conn, FeedId, "daily");
         var realtime = _db.GetLatestCollection(conn, FeedId, "realtime");
-        return JsonResponse(req, new
+        return JsonResponse(new
         {
             feed_id = FeedId,
             last_daily = daily,
@@ -59,13 +67,13 @@ public class ApiFunctions
     // -----------------------------------------------------------------------
 
     [Function("Stops")]
-    public HttpResponseData Stops(
-        [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "stops")] HttpRequestData req)
+    public IActionResult Stops(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "stops")] HttpRequest req)
     {
         EnsureDb();
         using var conn = _db.Connect(DbPath);
         var stops = _db.GetAllStops(conn, FeedId);
-        return JsonResponse(req, stops);
+        return JsonResponse(stops);
     }
 
     // -----------------------------------------------------------------------
@@ -73,13 +81,13 @@ public class ApiFunctions
     // -----------------------------------------------------------------------
 
     [Function("Routes")]
-    public HttpResponseData Routes(
-        [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "routes")] HttpRequestData req)
+    public IActionResult Routes(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "routes")] HttpRequest req)
     {
         EnsureDb();
         using var conn = _db.Connect(DbPath);
         var routes = _db.GetAllRoutes(conn, FeedId);
-        return JsonResponse(req, routes);
+        return JsonResponse(routes);
     }
 
     // -----------------------------------------------------------------------
@@ -87,17 +95,17 @@ public class ApiFunctions
     // -----------------------------------------------------------------------
 
     [Function("RoutesForStop")]
-    public HttpResponseData RoutesForStop(
-        [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "routes-for-stop")] HttpRequestData req)
+    public IActionResult RoutesForStop(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "routes-for-stop")] HttpRequest req)
     {
         var stopId = GetQuery(req, "stop_id");
         if (string.IsNullOrEmpty(stopId))
-            return JsonResponse(req, new { error = "stop_id parameter required" }, 400);
+            return JsonResponse(new { error = "stop_id parameter required" }, 400);
 
         EnsureDb();
         using var conn = _db.Connect(DbPath);
         var routes = _db.GetRoutesForStop(conn, stopId);
-        return JsonResponse(req, routes);
+        return JsonResponse(routes);
     }
 
     // -----------------------------------------------------------------------
@@ -105,8 +113,8 @@ public class ApiFunctions
     // -----------------------------------------------------------------------
 
     [Function("Observations")]
-    public HttpResponseData Observations(
-        [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "observations")] HttpRequestData req)
+    public IActionResult Observations(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "observations")] HttpRequest req)
     {
         var stopId = GetQuery(req, "stop_id");
         var dateStr = GetQuery(req, "date");
@@ -114,9 +122,9 @@ public class ApiFunctions
         var endDate = GetQuery(req, "to") ?? dateStr ?? "";
 
         if (string.IsNullOrEmpty(startDate) || string.IsNullOrEmpty(endDate))
-            return JsonResponse(req, new { error = "date or from/to parameters required" }, 400);
+            return JsonResponse(new { error = "date or from/to parameters required" }, 400);
         if (string.IsNullOrEmpty(stopId))
-            return JsonResponse(req, new { error = "stop_id parameter required" }, 400);
+            return JsonResponse(new { error = "stop_id parameter required" }, 400);
 
         var route = GetQuery(req, "route");
         var timeFrom = AnalyzerService.ParseTime(GetQuery(req, "time_from"));
@@ -125,7 +133,7 @@ public class ApiFunctions
         EnsureDb();
         using var conn = _db.Connect(DbPath);
         var rows = _db.GetObservations(conn, stopId, startDate, endDate, route, timeFrom, timeTo);
-        return JsonResponse(req, rows);
+        return JsonResponse(rows);
     }
 
     // -----------------------------------------------------------------------
@@ -133,13 +141,13 @@ public class ApiFunctions
     // -----------------------------------------------------------------------
 
     [Function("LatestObservations")]
-    public HttpResponseData LatestObservations(
-        [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "latest-observations")] HttpRequestData req)
+    public IActionResult LatestObservations(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "latest-observations")] HttpRequest req)
     {
         EnsureDb();
         using var conn = _db.Connect(DbPath);
         var rows = _db.GetLatestObservations(conn, 100, FeedId);
-        return JsonResponse(req, rows);
+        return JsonResponse(rows);
     }
 
     // -----------------------------------------------------------------------
@@ -147,8 +155,8 @@ public class ApiFunctions
     // -----------------------------------------------------------------------
 
     [Function("Summary")]
-    public HttpResponseData Summary(
-        [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "summary")] HttpRequestData req)
+    public IActionResult Summary(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "summary")] HttpRequest req)
     {
         var stopId = GetQuery(req, "stop_id");
         var fromDate = GetQuery(req, "from");
@@ -156,7 +164,7 @@ public class ApiFunctions
         var route = GetQuery(req, "route");
 
         if (string.IsNullOrEmpty(fromDate) || string.IsNullOrEmpty(toDate) || string.IsNullOrEmpty(stopId))
-            return JsonResponse(req, new { error = "stop_id, from, and to parameters required" }, 400);
+            return JsonResponse(new { error = "stop_id, from, and to parameters required" }, 400);
 
         var timeFrom = AnalyzerService.ParseTime(GetQuery(req, "time_from"));
         var timeTo = AnalyzerService.ParseTime(GetQuery(req, "time_to"));
@@ -164,7 +172,7 @@ public class ApiFunctions
         EnsureDb();
         using var conn = _db.Connect(DbPath);
         var result = _analyzer.GetSummary(conn, stopId, fromDate, toDate, route, timeFrom, timeTo);
-        return JsonResponse(req, result);
+        return JsonResponse(result);
     }
 
     // -----------------------------------------------------------------------
@@ -172,8 +180,8 @@ public class ApiFunctions
     // -----------------------------------------------------------------------
 
     [Function("RouteBreakdown")]
-    public HttpResponseData RouteBreakdown(
-        [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "route-breakdown")] HttpRequestData req)
+    public IActionResult RouteBreakdown(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "route-breakdown")] HttpRequest req)
     {
         var stopId = GetQuery(req, "stop_id");
         var fromDate = GetQuery(req, "from");
@@ -181,7 +189,7 @@ public class ApiFunctions
         var route = GetQuery(req, "route");
 
         if (string.IsNullOrEmpty(fromDate) || string.IsNullOrEmpty(toDate) || string.IsNullOrEmpty(stopId))
-            return JsonResponse(req, new { error = "stop_id, from, and to parameters required" }, 400);
+            return JsonResponse(new { error = "stop_id, from, and to parameters required" }, 400);
 
         var timeFrom = AnalyzerService.ParseTime(GetQuery(req, "time_from"));
         var timeTo = AnalyzerService.ParseTime(GetQuery(req, "time_to"));
@@ -189,7 +197,7 @@ public class ApiFunctions
         EnsureDb();
         using var conn = _db.Connect(DbPath);
         var result = _analyzer.GetRouteBreakdown(conn, stopId, fromDate, toDate, route, timeFrom, timeTo);
-        return JsonResponse(req, result);
+        return JsonResponse(result);
     }
 
     // -----------------------------------------------------------------------
@@ -197,8 +205,8 @@ public class ApiFunctions
     // -----------------------------------------------------------------------
 
     [Function("DelayByHour")]
-    public HttpResponseData DelayByHour(
-        [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "delay-by-hour")] HttpRequestData req)
+    public IActionResult DelayByHour(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "delay-by-hour")] HttpRequest req)
     {
         var stopId = GetQuery(req, "stop_id");
         var fromDate = GetQuery(req, "from");
@@ -206,7 +214,7 @@ public class ApiFunctions
         var route = GetQuery(req, "route");
 
         if (string.IsNullOrEmpty(fromDate) || string.IsNullOrEmpty(toDate) || string.IsNullOrEmpty(stopId))
-            return JsonResponse(req, new { error = "stop_id, from, and to parameters required" }, 400);
+            return JsonResponse(new { error = "stop_id, from, and to parameters required" }, 400);
 
         var timeFrom = AnalyzerService.ParseTime(GetQuery(req, "time_from"));
         var timeTo = AnalyzerService.ParseTime(GetQuery(req, "time_to"));
@@ -214,7 +222,7 @@ public class ApiFunctions
         EnsureDb();
         using var conn = _db.Connect(DbPath);
         var result = _analyzer.GetDelayByHour(conn, stopId, fromDate, toDate, route, timeFrom, timeTo);
-        return JsonResponse(req, result);
+        return JsonResponse(result);
     }
 
     // -----------------------------------------------------------------------
@@ -222,14 +230,15 @@ public class ApiFunctions
     // -----------------------------------------------------------------------
 
     [Function("CollectDaily")]
-    public async Task<HttpResponseData> CollectDaily(
-        [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "collect/daily")] HttpRequestData req)
+    public async Task<IActionResult> CollectDaily(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "collect/daily")] HttpRequest req)
     {
         EnsureDb();
         string? dateStr = null, stopId = null;
         try
         {
-            var body = await req.ReadAsStringAsync();
+            using var reader = new StreamReader(req.Body);
+            var body = await reader.ReadToEndAsync();
             if (!string.IsNullOrEmpty(body))
             {
                 var json = JsonDocument.Parse(body);
@@ -241,7 +250,7 @@ public class ApiFunctions
 
         var result = await _collector.CollectDailyAsync(DbPath, ApiUrl, ApiKey,
             stopId: stopId, serviceDate: dateStr, feedId: FeedId);
-        return JsonResponse(req, result);
+        return JsonResponse(result);
     }
 
     // -----------------------------------------------------------------------
@@ -249,14 +258,15 @@ public class ApiFunctions
     // -----------------------------------------------------------------------
 
     [Function("CollectRealtime")]
-    public async Task<HttpResponseData> CollectRealtime(
-        [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "collect/realtime")] HttpRequestData req)
+    public async Task<IActionResult> CollectRealtime(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "collect/realtime")] HttpRequest req)
     {
         EnsureDb();
         string? stopId = null;
         try
         {
-            var body = await req.ReadAsStringAsync();
+            using var reader = new StreamReader(req.Body);
+            var body = await reader.ReadToEndAsync();
             if (!string.IsNullOrEmpty(body))
             {
                 var json = JsonDocument.Parse(body);
@@ -267,7 +277,7 @@ public class ApiFunctions
 
         var result = await _collector.PollRealtimeOnceAsync(DbPath, ApiUrl, ApiKey,
             stopId: stopId, feedId: FeedId);
-        return JsonResponse(req, result);
+        return JsonResponse(result);
     }
 
     // -----------------------------------------------------------------------
@@ -275,38 +285,32 @@ public class ApiFunctions
     // -----------------------------------------------------------------------
 
     [Function("Discover")]
-    public async Task<HttpResponseData> Discover(
-        [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "discover")] HttpRequestData req)
+    public async Task<IActionResult> Discover(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "discover")] HttpRequest req)
     {
         EnsureDb();
         var result = await _collector.DiscoverStopsAsync(DbPath, ApiUrl, ApiKey, FeedId);
-        return JsonResponse(req, result);
+        return JsonResponse(result);
     }
 
     // -----------------------------------------------------------------------
     // Helpers
     // -----------------------------------------------------------------------
 
-    private static string? GetQuery(HttpRequestData req, string name)
+    private static string? GetQuery(HttpRequest req, string name)
     {
-        var query = System.Web.HttpUtility.ParseQueryString(req.Url.Query);
-        var val = query[name];
+        var val = req.Query[name].FirstOrDefault();
         return string.IsNullOrEmpty(val) ? null : val;
     }
 
-    private static HttpResponseData JsonResponse(HttpRequestData req, object body, int statusCode = 200)
+    private static IActionResult JsonResponse(object body, int statusCode = 200)
     {
-        var response = req.CreateResponse((System.Net.HttpStatusCode)statusCode);
-        response.Headers.Add("Content-Type", "application/json");
-        response.Headers.Add("Access-Control-Allow-Origin", "*");
-        response.Headers.Add("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
-        response.Headers.Add("Access-Control-Allow-Headers", "Content-Type");
-        var json = JsonSerializer.Serialize(body, new JsonSerializerOptions
+        var json = JsonSerializer.Serialize(body, JsonOptions);
+        return new ContentResult
         {
-            PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower,
-            DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull
-        });
-        response.WriteString(json);
-        return response;
+            Content = json,
+            ContentType = "application/json",
+            StatusCode = statusCode
+        };
     }
 }

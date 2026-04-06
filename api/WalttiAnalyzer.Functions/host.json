@@ -17,9 +17,5 @@
     "console": {
       "isEnabled": true
     }
-  },
-  "extensionBundle": {
-    "id": "Microsoft.Azure.Functions.ExtensionBundle",
-    "version": "[4.*, 5.0.0)"
   }
 }
