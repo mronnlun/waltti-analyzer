@@ -30,7 +30,7 @@ api/WalttiAnalyzer.Functions/
 ├── host.json                        # Azure Functions host configuration
 ├── local.settings.json.example      # Dev settings template
 ├── Functions/
-│   ├── SyncBusDataFunction.cs       # Timer trigger (every 3 min)
+│   ├── SyncBusDataFunction.cs       # Timer trigger (every 5 min)
 │   └── ApiFunctions.cs              # HTTP triggers (REST API)
 ├── Services/
 │   ├── DatabaseService.cs           # SQLite schema + data access

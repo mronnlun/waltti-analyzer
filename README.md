@@ -11,10 +11,10 @@ Bus punctuality analysis for Vaasa, Finland. Collects realtime delay data from t
 
 ### How it works
 
-1. **Timer-triggered function** (`SyncBusData`) runs every 3 minutes:
+1. **Timer-triggered function** (`SyncBusData`) runs every 5 minutes:
    - **Realtime polling** — every invocation captures current GPS-based delays before they disappear from the API
    - **Daily collection** — at 03:00 and 23:00 Helsinki time, fetches full day schedules
-   - **Weekly discovery** — Monday 02:00 Helsinki time, discovers all stops/routes for the feed
+   - **Stop discovery** — once per hour, or immediately on the first invocation of the day if stops haven't been fetched yet
 2. **HTTP-triggered functions** serve as the REST API backend for the SPA
 3. **SPA frontend** fetches data from the API and renders the dashboard, observations, and stops pages
 
