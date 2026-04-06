@@ -33,6 +33,11 @@ param sqlAdminPassword string
 @description('Monthly cost budget in the billing currency (e.g. EUR)')
 param budgetAmount int = 30
 
+@description('Current date (injected at deploy time via utcNow) — used to compute the budget start date')
+param currentDate string = utcNow('yyyy-MM-dd')
+
+var budgetStartDate = '${substring(currentDate, 0, 7)}-01'
+
 @description('Email address for budget alert notifications (leave empty to skip budget alerts)')
 param notificationEmail string = ''
 
@@ -58,6 +63,7 @@ resource storageAccount 'Microsoft.Storage/storageAccounts@2023-05-01' = {
 resource functionPlan 'Microsoft.Web/serverfarms@2023-12-01' = {
   name: '${projectName}-${env}-plan'
   location: location
+  kind: 'functionapp'
   sku: {
     name: 'Y1'
     tier: 'Dynamic'
@@ -243,7 +249,7 @@ resource budget 'Microsoft.Consumption/budgets@2023-11-01' = if (!empty(notifica
   name: '${projectName}-${env}-budget'
   properties: {
     timePeriod: {
-      startDate: '2025-01-01'
+      startDate: budgetStartDate
     }
     timeGrain: 'Monthly'
     amount: budgetAmount

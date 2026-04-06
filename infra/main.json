@@ -1,0 +1,385 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "metadata": {
+    "_generator": {
+      "name": "bicep",
+      "version": "0.41.2.15936",
+      "templateHash": "1502032221573755675"
+    }
+  },
+  "parameters": {
+    "projectName": {
+      "type": "string",
+      "defaultValue": "WalttiAnalyzer",
+      "metadata": {
+        "description": "Project name in PascalCase (no dashes)"
+      }
+    },
+    "env": {
+      "type": "string",
+      "defaultValue": "prod",
+      "metadata": {
+        "description": "Environment name (e.g. dev, test, prod)"
+      }
+    },
+    "location": {
+      "type": "string",
+      "defaultValue": "[resourceGroup().location]",
+      "metadata": {
+        "description": "Azure region for resources"
+      }
+    },
+    "staticWebAppLocation": {
+      "type": "string",
+      "defaultValue": "westeurope",
+      "allowedValues": [
+        "westus2",
+        "centralus",
+        "eastus2",
+        "westeurope",
+        "eastasia"
+      ],
+      "metadata": {
+        "description": "Azure region for the Static Web App (limited availability)"
+      }
+    },
+    "digitransitApiKey": {
+      "type": "securestring",
+      "metadata": {
+        "description": "Digitransit API key"
+      }
+    },
+    "defaultStopId": {
+      "type": "string",
+      "defaultValue": "Vaasa:309392",
+      "metadata": {
+        "description": "Default stop GTFS ID"
+      }
+    },
+    "sqlAdminLogin": {
+      "type": "string",
+      "defaultValue": "walttidbadmin",
+      "metadata": {
+        "description": "SQL admin login name"
+      }
+    },
+    "sqlAdminPassword": {
+      "type": "securestring",
+      "metadata": {
+        "description": "SQL admin password"
+      }
+    },
+    "budgetAmount": {
+      "type": "int",
+      "defaultValue": 30,
+      "metadata": {
+        "description": "Monthly cost budget in the billing currency (e.g. EUR)"
+      }
+    },
+    "currentDate": {
+      "type": "string",
+      "defaultValue": "[utcNow('yyyy-MM-dd')]",
+      "metadata": {
+        "description": "Current date (injected at deploy time via utcNow) — used to compute the budget start date"
+      }
+    },
+    "notificationEmail": {
+      "type": "string",
+      "defaultValue": "",
+      "metadata": {
+        "description": "Email address for budget alert notifications (leave empty to skip budget alerts)"
+      }
+    }
+  },
+  "variables": {
+    "budgetStartDate": "[format('{0}-01', substring(parameters('currentDate'), 0, 7))]",
+    "sqlServerName": "[toLower(format('{0}-{1}-sql', parameters('projectName'), parameters('env')))]",
+    "storageName": "[toLower(replace(format('{0}{1}st', parameters('projectName'), parameters('env')), '-', ''))]"
+  },
+  "resources": [
+    {
+      "type": "Microsoft.Storage/storageAccounts",
+      "apiVersion": "2023-05-01",
+      "name": "[variables('storageName')]",
+      "location": "[parameters('location')]",
+      "sku": {
+        "name": "Standard_LRS"
+      },
+      "kind": "StorageV2",
+      "properties": {
+        "supportsHttpsTrafficOnly": true,
+        "minimumTlsVersion": "TLS1_2"
+      }
+    },
+    {
+      "type": "Microsoft.Web/serverfarms",
+      "apiVersion": "2023-12-01",
+      "name": "[format('{0}-{1}-plan', parameters('projectName'), parameters('env'))]",
+      "location": "[parameters('location')]",
+      "kind": "functionapp",
+      "sku": {
+        "name": "Y1",
+        "tier": "Dynamic"
+      },
+      "properties": {
+        "reserved": true
+      }
+    },
+    {
+      "type": "Microsoft.Sql/servers",
+      "apiVersion": "2023-08-01-preview",
+      "name": "[variables('sqlServerName')]",
+      "location": "[parameters('location')]",
+      "properties": {
+        "administratorLogin": "[parameters('sqlAdminLogin')]",
+        "administratorLoginPassword": "[parameters('sqlAdminPassword')]",
+        "version": "12.0",
+        "minimalTlsVersion": "1.2"
+      }
+    },
+    {
+      "type": "Microsoft.Sql/servers/firewallRules",
+      "apiVersion": "2023-08-01-preview",
+      "name": "[format('{0}/{1}', variables('sqlServerName'), 'AllowAzureServices')]",
+      "properties": {
+        "startIpAddress": "0.0.0.0",
+        "endIpAddress": "0.0.0.0"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Sql/servers', variables('sqlServerName'))]"
+      ]
+    },
+    {
+      "type": "Microsoft.Sql/servers/databases",
+      "apiVersion": "2023-08-01-preview",
+      "name": "[format('{0}/{1}', variables('sqlServerName'), format('{0}-{1}-sqldb', parameters('projectName'), parameters('env')))]",
+      "location": "[parameters('location')]",
+      "sku": {
+        "name": "Basic",
+        "tier": "Basic"
+      },
+      "properties": {
+        "maxSizeBytes": 2147483648
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Sql/servers', variables('sqlServerName'))]"
+      ]
+    },
+    {
+      "type": "Microsoft.Sql/servers/databases/advisors",
+      "apiVersion": "2014-04-01",
+      "name": "[format('{0}/{1}/{2}', variables('sqlServerName'), format('{0}-{1}-sqldb', parameters('projectName'), parameters('env')), 'ForceLastGoodPlan')]",
+      "properties": {
+        "autoExecuteValue": "Enabled"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Sql/servers/databases', variables('sqlServerName'), format('{0}-{1}-sqldb', parameters('projectName'), parameters('env')))]"
+      ]
+    },
+    {
+      "type": "Microsoft.Sql/servers/databases/advisors",
+      "apiVersion": "2014-04-01",
+      "name": "[format('{0}/{1}/{2}', variables('sqlServerName'), format('{0}-{1}-sqldb', parameters('projectName'), parameters('env')), 'CreateIndex')]",
+      "properties": {
+        "autoExecuteValue": "Enabled"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Sql/servers/databases', variables('sqlServerName'), format('{0}-{1}-sqldb', parameters('projectName'), parameters('env')))]"
+      ]
+    },
+    {
+      "type": "Microsoft.Sql/servers/databases/advisors",
+      "apiVersion": "2014-04-01",
+      "name": "[format('{0}/{1}/{2}', variables('sqlServerName'), format('{0}-{1}-sqldb', parameters('projectName'), parameters('env')), 'DropIndex')]",
+      "properties": {
+        "autoExecuteValue": "Enabled"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Sql/servers/databases', variables('sqlServerName'), format('{0}-{1}-sqldb', parameters('projectName'), parameters('env')))]"
+      ]
+    },
+    {
+      "type": "Microsoft.OperationalInsights/workspaces",
+      "apiVersion": "2023-09-01",
+      "name": "[format('{0}-{1}-log', parameters('projectName'), parameters('env'))]",
+      "location": "[parameters('location')]",
+      "properties": {
+        "sku": {
+          "name": "PerGB2018"
+        },
+        "retentionInDays": 30
+      }
+    },
+    {
+      "type": "Microsoft.Insights/components",
+      "apiVersion": "2020-02-02",
+      "name": "[format('{0}-{1}-appi', parameters('projectName'), parameters('env'))]",
+      "location": "[parameters('location')]",
+      "kind": "web",
+      "properties": {
+        "Application_Type": "web",
+        "WorkspaceResourceId": "[resourceId('Microsoft.OperationalInsights/workspaces', format('{0}-{1}-log', parameters('projectName'), parameters('env')))]"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.OperationalInsights/workspaces', format('{0}-{1}-log', parameters('projectName'), parameters('env')))]"
+      ]
+    },
+    {
+      "type": "Microsoft.Web/sites",
+      "apiVersion": "2023-12-01",
+      "name": "[format('{0}-{1}-func', parameters('projectName'), parameters('env'))]",
+      "location": "[parameters('location')]",
+      "kind": "functionapp,linux",
+      "properties": {
+        "serverFarmId": "[resourceId('Microsoft.Web/serverfarms', format('{0}-{1}-plan', parameters('projectName'), parameters('env')))]",
+        "httpsOnly": true,
+        "siteConfig": {
+          "linuxFxVersion": "DOTNET-ISOLATED|8.0",
+          "connectionStrings": [
+            {
+              "name": "DATABASE",
+              "connectionString": "[format('Driver={{ODBC Driver 18 for SQL Server}};Server=tcp:{0},1433;Database={1};Uid={2};Pwd={3};Encrypt=yes;TrustServerCertificate=no;Connection Timeout=30;', reference(resourceId('Microsoft.Sql/servers', variables('sqlServerName')), '2023-08-01-preview').fullyQualifiedDomainName, format('{0}-{1}-sqldb', parameters('projectName'), parameters('env')), parameters('sqlAdminLogin'), parameters('sqlAdminPassword'))]",
+              "type": "SQLAzure"
+            }
+          ],
+          "appSettings": [
+            {
+              "name": "AzureWebJobsStorage",
+              "value": "[format('DefaultEndpointsProtocol=https;AccountName={0};EndpointSuffix={1};AccountKey={2}', variables('storageName'), environment().suffixes.storage, listKeys(resourceId('Microsoft.Storage/storageAccounts', variables('storageName')), '2023-05-01').keys[0].value)]"
+            },
+            {
+              "name": "FUNCTIONS_EXTENSION_VERSION",
+              "value": "~4"
+            },
+            {
+              "name": "FUNCTIONS_WORKER_RUNTIME",
+              "value": "dotnet-isolated"
+            },
+            {
+              "name": "DIGITRANSIT_API_KEY",
+              "value": "[parameters('digitransitApiKey')]"
+            },
+            {
+              "name": "DEFAULT_STOP_ID",
+              "value": "[parameters('defaultStopId')]"
+            },
+            {
+              "name": "APPLICATIONINSIGHTS_CONNECTION_STRING",
+              "value": "[reference(resourceId('Microsoft.Insights/components', format('{0}-{1}-appi', parameters('projectName'), parameters('env'))), '2020-02-02').ConnectionString]"
+            },
+            {
+              "name": "SCM_DO_BUILD_DURING_DEPLOYMENT",
+              "value": "true"
+            }
+          ]
+        }
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Insights/components', format('{0}-{1}-appi', parameters('projectName'), parameters('env')))]",
+        "[resourceId('Microsoft.Web/serverfarms', format('{0}-{1}-plan', parameters('projectName'), parameters('env')))]",
+        "[resourceId('Microsoft.Sql/servers/databases', variables('sqlServerName'), format('{0}-{1}-sqldb', parameters('projectName'), parameters('env')))]",
+        "[resourceId('Microsoft.Sql/servers', variables('sqlServerName'))]",
+        "[resourceId('Microsoft.Storage/storageAccounts', variables('storageName'))]"
+      ]
+    },
+    {
+      "type": "Microsoft.Web/staticSites",
+      "apiVersion": "2023-12-01",
+      "name": "[format('{0}-{1}-swa', parameters('projectName'), parameters('env'))]",
+      "location": "[parameters('staticWebAppLocation')]",
+      "sku": {
+        "name": "Free",
+        "tier": "Free"
+      },
+      "properties": {
+        "buildProperties": {
+          "skipGithubActionWorkflowGeneration": true
+        }
+      }
+    },
+    {
+      "type": "Microsoft.Insights/diagnosticSettings",
+      "apiVersion": "2021-05-01-preview",
+      "scope": "[resourceId('Microsoft.Web/sites', format('{0}-{1}-func', parameters('projectName'), parameters('env')))]",
+      "name": "[format('{0}-{1}-func-diag', parameters('projectName'), parameters('env'))]",
+      "properties": {
+        "workspaceId": "[resourceId('Microsoft.OperationalInsights/workspaces', format('{0}-{1}-log', parameters('projectName'), parameters('env')))]",
+        "logs": [
+          {
+            "category": "FunctionAppLogs",
+            "enabled": true
+          }
+        ],
+        "metrics": [
+          {
+            "category": "AllMetrics",
+            "enabled": true
+          }
+        ]
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Web/sites', format('{0}-{1}-func', parameters('projectName'), parameters('env')))]",
+        "[resourceId('Microsoft.OperationalInsights/workspaces', format('{0}-{1}-log', parameters('projectName'), parameters('env')))]"
+      ]
+    },
+    {
+      "condition": "[not(empty(parameters('notificationEmail')))]",
+      "type": "Microsoft.Consumption/budgets",
+      "apiVersion": "2023-11-01",
+      "name": "[format('{0}-{1}-budget', parameters('projectName'), parameters('env'))]",
+      "properties": {
+        "timePeriod": {
+          "startDate": "[variables('budgetStartDate')]"
+        },
+        "timeGrain": "Monthly",
+        "amount": "[parameters('budgetAmount')]",
+        "category": "Cost",
+        "notifications": {
+          "actual80": {
+            "enabled": true,
+            "operator": "GreaterThanOrEqualTo",
+            "threshold": 80,
+            "contactEmails": [
+              "[parameters('notificationEmail')]"
+            ]
+          },
+          "actual100": {
+            "enabled": true,
+            "operator": "GreaterThanOrEqualTo",
+            "threshold": 100,
+            "contactEmails": [
+              "[parameters('notificationEmail')]"
+            ]
+          }
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "functionAppName": {
+      "type": "string",
+      "value": "[format('{0}-{1}-func', parameters('projectName'), parameters('env'))]"
+    },
+    "functionAppUrl": {
+      "type": "string",
+      "value": "[format('https://{0}', reference(resourceId('Microsoft.Web/sites', format('{0}-{1}-func', parameters('projectName'), parameters('env'))), '2023-12-01').defaultHostName)]"
+    },
+    "staticWebAppName": {
+      "type": "string",
+      "value": "[format('{0}-{1}-swa', parameters('projectName'), parameters('env'))]"
+    },
+    "staticWebAppUrl": {
+      "type": "string",
+      "value": "[format('https://{0}', reference(resourceId('Microsoft.Web/staticSites', format('{0}-{1}-swa', parameters('projectName'), parameters('env'))), '2023-12-01').defaultHostname)]"
+    },
+    "sqlServerFqdn": {
+      "type": "string",
+      "value": "[reference(resourceId('Microsoft.Sql/servers', variables('sqlServerName')), '2023-08-01-preview').fullyQualifiedDomainName]"
+    },
+    "resourceGroupName": {
+      "type": "string",
+      "value": "[resourceGroup().name]"
+    }
+  }
+}
