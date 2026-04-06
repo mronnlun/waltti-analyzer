@@ -13,6 +13,12 @@ builder.Services
     .AddApplicationInsightsTelemetryWorkerService()
     .ConfigureFunctionsApplicationInsights();
 
+builder.Services.AddCors(options =>
+{
+    options.AddDefaultPolicy(policy =>
+        policy.AllowAnyOrigin().AllowAnyMethod().AllowAnyHeader());
+});
+
 builder.Services.Configure<WalttiSettings>(builder.Configuration.GetSection("Waltti"));
 builder.Services.AddSingleton<DatabaseService>();
 builder.Services.AddSingleton<DigitransitClient>();
