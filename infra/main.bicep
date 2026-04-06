@@ -197,12 +197,6 @@ resource functionApp 'Microsoft.Web/sites@2023-12-01' = {
           value: defaultStopId
         }
         {
-          // /home is writable and persistent (backed by Azure Files) on Linux consumption plan.
-          // Using a relative path would fail with WEBSITE_RUN_FROM_PACKAGE=1 (read-only wwwroot).
-          name: 'Waltti__DatabasePath'
-          value: '/home/data/waltti.db'
-        }
-        {
           name: 'APPLICATIONINSIGHTS_CONNECTION_STRING'
           value: appInsights.properties.ConnectionString
         }
