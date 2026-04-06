@@ -13,7 +13,7 @@ The current direction is feed-wide coverage for Vaasa. A default stop may still 
 
 ## Tech Stack
 
-- **C# / .NET 8** with **Azure Functions** (consumption plan, isolated worker model)
+- **C# / .NET 8** with **Azure Functions** (Flex Consumption plan, isolated worker model)
 - **SQLite** database locally (Microsoft.Data.Sqlite); **Azure SQL** in production
 - Timer-triggered function for background data synchronization
 - HTTP-triggered functions as REST API backend

@@ -9,7 +9,7 @@
 
 ## Current Direction
 
-- The backend runs on Azure Functions (consumption plan, C#/.NET 8 isolated worker) with a timer-triggered sync function and HTTP-triggered API functions.
+- The backend runs on Azure Functions (Flex Consumption plan, C#/.NET 8 isolated worker) with a timer-triggered sync function and HTTP-triggered API functions.
 - The frontend is a static SPA (vanilla JS, no build step) deployed to Azure Static Web Apps.
 - Treat the app as a network-wide collector for the Vaasa feed, not only as a single-stop demo.
 - Discover all stops for the configured `FEED_ID`.
