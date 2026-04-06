@@ -28,11 +28,21 @@ Bus punctuality analysis for Vaasa, Finland. Collects realtime delay data from t
 
 ### Setup
 
+**This step is required before running the project in any way — including pressing F5 in Visual Studio.**
+
 ```bash
 # Copy and configure local settings
 cp api/WalttiAnalyzer.Functions/local.settings.json.example api/WalttiAnalyzer.Functions/local.settings.json
 # Edit local.settings.json — add your DIGITRANSIT_API_KEY
 ```
+
+`local.settings.json` is gitignored (it contains secrets) and must be created on every fresh clone.
+The file must exist and contain `FUNCTIONS_WORKER_RUNTIME=dotnet-isolated` before the project is opened in Visual Studio or started with `func start`. Without it:
+
+- Visual Studio will prompt **"Select the hosting model"** because it cannot determine in-process vs isolated worker.
+- The Azure Functions Core Tools will warn **"A default language needs to be set for isolated model projects"**.
+
+Both prompts disappear once `local.settings.json` is in place.
 
 ### Run the backend
 
