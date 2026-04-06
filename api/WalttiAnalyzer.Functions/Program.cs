@@ -9,7 +9,6 @@ var host = new HostBuilder()
     .ConfigureFunctionsWorkerDefaults()
     .ConfigureAppConfiguration((context, config) =>
     {
-        config.AddJsonFile("appsettings.json", optional: true, reloadOnChange: false);
         config.AddEnvironmentVariables();
     })
     .ConfigureServices((context, services) =>

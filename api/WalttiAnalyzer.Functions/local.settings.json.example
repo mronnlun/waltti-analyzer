@@ -3,11 +3,10 @@
   "Values": {
     "AzureWebJobsStorage": "UseDevelopmentStorage=true",
     "FUNCTIONS_WORKER_RUNTIME": "dotnet-isolated",
-    "DIGITRANSIT_API_KEY": "your_api_key_here",
-    "DIGITRANSIT_API_URL": "https://api.digitransit.fi/routing/v2/waltti/gtfs/v1",
-    "FEED_ID": "Vaasa",
-    "DEFAULT_STOP_ID": "Vaasa:309392",
-    "DATABASE_PATH": "data/waltti.db"
+    "Waltti__DatabasePath": "data/waltti.db",
+    "Waltti__FeedId": "Vaasa",
+    "Waltti__DigitransitApiUrl": "https://api.digitransit.fi/routing/v2/waltti/gtfs/v1",
+    "Waltti__DigitransitApiKey": "your_api_key_here"
   },
   "Host": {
     "CORS": "*"
