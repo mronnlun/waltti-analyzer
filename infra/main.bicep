@@ -187,12 +187,13 @@ resource functionApp 'Microsoft.Web/sites@2023-12-01' = {
           name: 'FUNCTIONS_WORKER_RUNTIME'
           value: 'dotnet-isolated'
         }
+        // Settings bound to WalttiSettings via "Waltti:" config section prefix
         {
-          name: 'DIGITRANSIT_API_KEY'
+          name: 'Waltti__DigitransitApiKey'
           value: digitransitApiKey
         }
         {
-          name: 'DEFAULT_STOP_ID'
+          name: 'Waltti__DefaultStopId'
           value: defaultStopId
         }
         {
