@@ -6,6 +6,10 @@
     <OutputType>Exe</OutputType>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+    <!-- Use file-based function metadata (functions.metadata) instead of gRPC worker indexing.
+         Worker indexing (source-generated metadata provider) has proven unreliable with this
+         SDK version, while file-based discovery works reliably with extension bundles. -->
+    <FunctionsEnableWorkerIndexing>false</FunctionsEnableWorkerIndexing>
   </PropertyGroup>
 
   <ItemGroup>
