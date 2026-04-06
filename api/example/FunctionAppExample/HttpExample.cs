@@ -1,20 +1,20 @@
-using Microsoft.AspNetCore.Http;
-using Microsoft.AspNetCore.Mvc;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Extensions.Logging;
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Mvc;
 
-namespace ExampleFunctionApp;
+namespace FunctionAppExample;
 
-public class Function1
+public class HttpExample
 {
-    private readonly ILogger<Function1> _logger;
+    private readonly ILogger<HttpExample> _logger;
 
-    public Function1(ILogger<Function1> logger)
+    public HttpExample(ILogger<HttpExample> logger)
     {
         _logger = logger;
     }
 
-    [Function("Function1")]
+    [Function("HttpExample")]
     public IActionResult Run([HttpTrigger(AuthorizationLevel.Anonymous, "get", "post")] HttpRequest req)
     {
         _logger.LogInformation("C# HTTP trigger function processed a request.");

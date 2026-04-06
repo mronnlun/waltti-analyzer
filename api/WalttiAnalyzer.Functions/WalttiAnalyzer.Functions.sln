@@ -5,10 +5,6 @@ VisualStudioVersion = 18.4.11626.88
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "WalttiAnalyzer.Functions", "WalttiAnalyzer.Functions.csproj", "{A181E8C1-2AD2-2221-0FB2-8FA40E4F3E99}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ExampleFunctionApp", "..\example\ExampleFunctionApp\ExampleFunctionApp.csproj", "{F6B102DF-C533-4DAF-80D7-D8C51507B8B4}"
-EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "FunctionApp2", "..\example\FunctionApp2\FunctionApp2.csproj", "{D9528A60-42C2-4616-BDE9-88C5747662C3}"
-EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -19,14 +15,6 @@ Global
 		{A181E8C1-2AD2-2221-0FB2-8FA40E4F3E99}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{A181E8C1-2AD2-2221-0FB2-8FA40E4F3E99}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{A181E8C1-2AD2-2221-0FB2-8FA40E4F3E99}.Release|Any CPU.Build.0 = Release|Any CPU
-		{F6B102DF-C533-4DAF-80D7-D8C51507B8B4}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{F6B102DF-C533-4DAF-80D7-D8C51507B8B4}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{F6B102DF-C533-4DAF-80D7-D8C51507B8B4}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{F6B102DF-C533-4DAF-80D7-D8C51507B8B4}.Release|Any CPU.Build.0 = Release|Any CPU
-		{D9528A60-42C2-4616-BDE9-88C5747662C3}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{D9528A60-42C2-4616-BDE9-88C5747662C3}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{D9528A60-42C2-4616-BDE9-88C5747662C3}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{D9528A60-42C2-4616-BDE9-88C5747662C3}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

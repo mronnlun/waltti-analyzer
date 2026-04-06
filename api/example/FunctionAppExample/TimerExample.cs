@@ -2,18 +2,18 @@ using System;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Extensions.Logging;
 
-namespace FunctionApp2;
+namespace FunctionAppExample;
 
-public class Function1
+public class TimerExample
 {
     private readonly ILogger _logger;
 
-    public Function1(ILoggerFactory loggerFactory)
+    public TimerExample(ILoggerFactory loggerFactory)
     {
-        _logger = loggerFactory.CreateLogger<Function1>();
+        _logger = loggerFactory.CreateLogger<TimerExample>();
     }
 
-    [Function("Function1")]
+    [Function("TimerExample")]
     public void Run([TimerTrigger("0 */5 * * * *")] TimerInfo myTimer)
     {
         _logger.LogInformation("C# Timer trigger function executed at: {executionTime}", DateTime.Now);
