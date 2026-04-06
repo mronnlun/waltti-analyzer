@@ -41,18 +41,9 @@ var budgetStartDate = '${substring(currentDate, 0, 7)}-01'
 @description('Email address for budget alert notifications (leave empty to skip budget alerts)')
 param notificationEmail string = ''
 
-@description('Maximum instance count for the Flex Consumption plan')
-param maximumInstanceCount int = 100
-
-@description('Instance memory in MB for the Flex Consumption plan')
-@allowed([512, 2048, 4096])
-param instanceMemoryMB int = 2048
-
 // SQL Server names must be globally unique and lowercase
 var sqlServerName = toLower('${projectName}-${env}-sql')
 var storageName = toLower(replace('${projectName}${env}st', '-', ''))
-var functionAppName = '${projectName}-${env}-func'
-var deploymentStorageContainerName = 'app-package-${toLower(functionAppName)}'
 
 // --- Storage Account (required for Function App) ---
 resource storageAccount 'Microsoft.Storage/storageAccounts@2023-05-01' = {
@@ -65,33 +56,17 @@ resource storageAccount 'Microsoft.Storage/storageAccounts@2023-05-01' = {
   properties: {
     supportsHttpsTrafficOnly: true
     minimumTlsVersion: 'TLS1_2'
-    allowBlobPublicAccess: false
-    allowSharedKeyAccess: false
   }
 }
 
-// --- Blob container for Flex Consumption deployment packages ---
-resource blobServices 'Microsoft.Storage/storageAccounts/blobServices@2023-05-01' = {
-  parent: storageAccount
-  name: 'default'
-}
-
-resource deploymentContainer 'Microsoft.Storage/storageAccounts/blobServices/containers@2023-05-01' = {
-  parent: blobServices
-  name: deploymentStorageContainerName
-  properties: {
-    publicAccess: 'None'
-  }
-}
-
-// --- Flex Consumption App Service Plan ---
+// --- Consumption App Service Plan (serverless) ---
 resource functionPlan 'Microsoft.Web/serverfarms@2023-12-01' = {
   name: '${projectName}-${env}-plan'
   location: location
   kind: 'functionapp'
   sku: {
-    name: 'FC1'
-    tier: 'FlexConsumption'
+    name: 'Y1'
+    tier: 'Dynamic'
   }
   properties: {
     reserved: true // Required for Linux
@@ -182,62 +157,35 @@ resource appInsights 'Microsoft.Insights/components@2020-02-02' = {
   }
 }
 
-// --- Function App (Flex Consumption plan) ---
+// --- Function App (Consumption plan) ---
 resource functionApp 'Microsoft.Web/sites@2023-12-01' = {
-  name: functionAppName
+  name: '${projectName}-${env}-func'
   location: location
   kind: 'functionapp,linux'
-  identity: {
-    type: 'SystemAssigned'
-  }
   properties: {
     serverFarmId: functionPlan.id
     httpsOnly: true
-    reserved: true
-    functionAppConfig: {
-      runtime: {
-        name: 'dotnet-isolated'
-        version: '8.0'
-      }
-      scaleAndConcurrency: {
-        maximumInstanceCount: maximumInstanceCount
-        instanceMemoryMB: instanceMemoryMB
-      }
-      deployment: {
-        storage: {
-          type: 'blobContainer'
-          value: '${storageAccount.properties.primaryEndpoints.blob}${deploymentStorageContainerName}'
-          authentication: {
-            type: 'SystemAssignedIdentity'
-          }
-        }
-      }
-    }
     siteConfig: {
+      linuxFxVersion: 'DOTNET-ISOLATED|8.0'
+      connectionStrings: [
+        {
+          name: 'DATABASE'
+          connectionString: 'Driver={ODBC Driver 18 for SQL Server};Server=tcp:${sqlServer.properties.fullyQualifiedDomainName},1433;Database=${sqlDatabase.name};Uid=${sqlAdminLogin};Pwd=${sqlAdminPassword};Encrypt=yes;TrustServerCertificate=no;Connection Timeout=30;'
+          type: 'SQLAzure'
+        }
+      ]
       appSettings: [
         {
-          name: 'AzureWebJobsStorage__credential'
-          value: 'managedidentity'
+          name: 'AzureWebJobsStorage'
+          value: 'DefaultEndpointsProtocol=https;AccountName=${storageAccount.name};EndpointSuffix=${az.environment().suffixes.storage};AccountKey=${storageAccount.listKeys().keys[0].value}'
         }
         {
-          name: 'AzureWebJobsStorage__blobServiceUri'
-          value: 'https://${storageAccount.name}.blob.${az.environment().suffixes.storage}'
+          name: 'FUNCTIONS_EXTENSION_VERSION'
+          value: '~4'
         }
         {
-          name: 'AzureWebJobsStorage__queueServiceUri'
-          value: 'https://${storageAccount.name}.queue.${az.environment().suffixes.storage}'
-        }
-        {
-          name: 'AzureWebJobsStorage__tableServiceUri'
-          value: 'https://${storageAccount.name}.table.${az.environment().suffixes.storage}'
-        }
-        {
-          name: 'APPLICATIONINSIGHTS_CONNECTION_STRING'
-          value: appInsights.properties.ConnectionString
-        }
-        {
-          name: 'APPLICATIONINSIGHTS_AUTHENTICATION_STRING'
-          value: 'Authorization=AAD'
+          name: 'FUNCTIONS_WORKER_RUNTIME'
+          value: 'dotnet-isolated'
         }
         // Settings bound to WalttiSettings via "Waltti:" config section prefix
         {
@@ -248,28 +196,20 @@ resource functionApp 'Microsoft.Web/sites@2023-12-01' = {
           name: 'Waltti__DefaultStopId'
           value: defaultStopId
         }
-      ]
-      connectionStrings: [
         {
-          name: 'DATABASE'
-          connectionString: 'Driver={ODBC Driver 18 for SQL Server};Server=tcp:${sqlServer.properties.fullyQualifiedDomainName},1433;Database=${sqlDatabase.name};Uid=${sqlAdminLogin};Pwd=${sqlAdminPassword};Encrypt=yes;TrustServerCertificate=no;Connection Timeout=30;'
-          type: 'SQLAzure'
+          name: 'APPLICATIONINSIGHTS_CONNECTION_STRING'
+          value: appInsights.properties.ConnectionString
+        }
+        {
+          name: 'SCM_DO_BUILD_DURING_DEPLOYMENT'
+          value: 'false'
+        }
+        {
+          name: 'WEBSITE_RUN_FROM_PACKAGE'
+          value: '1'
         }
       ]
     }
-  }
-  dependsOn: [
-    deploymentContainer
-  ]
-}
-
-// --- RBAC role assignments for managed identity ---
-module rbacAssignments 'rbac.bicep' = {
-  name: '${projectName}-${env}-rbac'
-  params: {
-    storageAccountName: storageAccount.name
-    appInsightsName: appInsights.name
-    managedIdentityPrincipalId: functionApp.identity.principalId
   }
 }
 
