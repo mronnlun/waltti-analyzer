@@ -77,20 +77,13 @@ public class SyncBusDataFunction
             }
         }
 
-        if (shouldDiscover)
-        {
-            _logger.LogInformation("Running stop discovery");
-            var result = await _collector.DiscoverStopsAsync(dbPath, apiUrl, apiKey, feedId);
-            _logger.LogInformation("Discovery result: {@Result}", result);
-        }
+        _logger.LogInformation("Running stop discovery");
+        var stops = await _collector.DiscoverStopsAsync(dbPath, apiUrl, apiKey, feedId);
+        _logger.LogInformation("Discovery result: {@Result}", stops);
 
-        // Daily collection: 03:00–03:04 and 23:00–23:04
-        if ((hour == 3 || hour == 23) && minute < 5)
-        {
-            _logger.LogInformation("Running daily collection at {Hour}:{Minute:D2}", hour, minute);
-            var result = await _collector.CollectDailyAsync(dbPath, apiUrl, apiKey, feedId: feedId);
-            _logger.LogInformation("Daily collection result: {@Result}", result);
-        }
+        _logger.LogInformation("Running daily collection at {Hour}:{Minute:D2}", hour, minute);
+        var result = await _collector.CollectDailyAsync(dbPath, apiUrl, apiKey, feedId: feedId);
+        _logger.LogInformation("Daily collection result: {@Result}", result);
 
         // Realtime polling: every invocation
         var realtimeResult = await _collector.PollRealtimeOnceAsync(dbPath, apiUrl, apiKey, feedId: feedId);

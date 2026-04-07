@@ -20,9 +20,16 @@ public class DigitransitClient
 
     public void Configure(string apiUrl, string apiKey)
     {
-        _httpClient.BaseAddress = new Uri(apiUrl);
-        _httpClient.DefaultRequestHeaders.Remove("digitransit-subscription-key");
-        _httpClient.DefaultRequestHeaders.Add("digitransit-subscription-key", apiKey);
+        try
+        {
+            _httpClient.BaseAddress = new Uri(apiUrl);
+            _httpClient.DefaultRequestHeaders.Remove("digitransit-subscription-key");
+            _httpClient.DefaultRequestHeaders.Add("digitransit-subscription-key", apiKey);
+        }
+        catch(Exception ex)
+        {
+            _logger.LogError(ex, "Error configuring DigitransitClient");
+        }
     }
 
     // -----------------------------------------------------------------------

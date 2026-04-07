@@ -7,13 +7,7 @@
       "Function": "Information",
       "Host.Aggregator": "Trace"
     },
-    "applicationInsights": {
-      "samplingSettings": {
-        "isEnabled": true,
-        "excludedTypes": "Request"
-      },
-      "enableLiveMetricsFilters": true
-    },
+    "telemetryMode": "OpenTelemetry",
     "console": {
       "isEnabled": true
     }
