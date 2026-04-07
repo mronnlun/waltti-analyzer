@@ -59,17 +59,42 @@ resource storageAccount 'Microsoft.Storage/storageAccounts@2023-05-01' = {
   }
 }
 
+// --- Blob service and deployment container ---
+resource blobService 'Microsoft.Storage/storageAccounts/blobServices@2023-05-01' = {
+  parent: storageAccount
+  name: 'default'
+}
+
+resource deploymentContainer 'Microsoft.Storage/storageAccounts/blobServices/containers@2023-05-01' = {
+  parent: blobService
+  name: 'app-package-${toLower('${projectName}-${env}-func')}'
+  properties: {
+    publicAccess: 'None'
+  }
+}
+
 // --- Consumption App Service Plan (serverless) ---
-resource functionPlan 'Microsoft.Web/serverfarms@2023-12-01' = {
+resource functionPlan 'Microsoft.Web/serverfarms@2024-11-01' = {
   name: '${projectName}-${env}-plan'
   location: location
   kind: 'functionapp'
   sku: {
     name: 'Y1'
     tier: 'Dynamic'
+    size: 'Y1'
+    family: 'Y'
+    capacity: 0
   }
   properties: {
+    perSiteScaling: false
+    elasticScaleEnabled: false
+    maximumElasticWorkerCount: 1
     reserved: true // Required for Linux
+    isXenon: false
+    hyperV: false
+    targetWorkerCount: 0
+    targetWorkerSizeId: 0
+    zoneRedundant: false
   }
 }
 
@@ -157,16 +182,27 @@ resource appInsights 'Microsoft.Insights/components@2020-02-02' = {
   }
 }
 
-// --- Function App (Consumption plan) ---
-resource functionApp 'Microsoft.Web/sites@2023-12-01' = {
+// --- Function App (Consumption plan, V2 config model) ---
+var storageConnectionString = 'DefaultEndpointsProtocol=https;AccountName=${storageAccount.name};EndpointSuffix=${az.environment().suffixes.storage};AccountKey=${storageAccount.listKeys().keys[0].value}'
+
+resource functionApp 'Microsoft.Web/sites@2024-11-01' = {
   name: '${projectName}-${env}-func'
   location: location
   kind: 'functionapp,linux'
+  identity: {
+    type: 'SystemAssigned'
+  }
   properties: {
     serverFarmId: functionPlan.id
+    reserved: true
     httpsOnly: true
+    clientAffinityEnabled: false
     siteConfig: {
-      linuxFxVersion: 'DOTNET-ISOLATED|8.0'
+      numberOfWorkers: 1
+      alwaysOn: false
+      http20Enabled: false
+      functionAppScaleLimit: 3
+      minimumElasticInstanceCount: 0
       connectionStrings: [
         {
           name: 'DATABASE'
@@ -177,7 +213,11 @@ resource functionApp 'Microsoft.Web/sites@2023-12-01' = {
       appSettings: [
         {
           name: 'AzureWebJobsStorage'
-          value: 'DefaultEndpointsProtocol=https;AccountName=${storageAccount.name};EndpointSuffix=${az.environment().suffixes.storage};AccountKey=${storageAccount.listKeys().keys[0].value}'
+          value: storageConnectionString
+        }
+        {
+          name: 'DEPLOYMENT_STORAGE_CONNECTION_STRING'
+          value: storageConnectionString
         }
         {
           name: 'FUNCTIONS_EXTENSION_VERSION'
@@ -200,15 +240,27 @@ resource functionApp 'Microsoft.Web/sites@2023-12-01' = {
           name: 'APPLICATIONINSIGHTS_CONNECTION_STRING'
           value: appInsights.properties.ConnectionString
         }
-        {
-          name: 'SCM_DO_BUILD_DURING_DEPLOYMENT'
-          value: 'false'
-        }
-        {
-          name: 'WEBSITE_RUN_FROM_PACKAGE'
-          value: '1'
-        }
       ]
+    }
+    functionAppConfig: {
+      deployment: {
+        storage: {
+          type: 'blobcontainer'
+          value: '${storageAccount.properties.primaryEndpoints.blob}${deploymentContainer.name}'
+          authentication: {
+            type: 'storageaccountconnectionstring'
+            storageAccountConnectionStringName: 'DEPLOYMENT_STORAGE_CONNECTION_STRING'
+          }
+        }
+      }
+      runtime: {
+        name: 'dotnet-isolated'
+        version: '10.0'
+      }
+      scaleAndConcurrency: {
+        maximumInstanceCount: 3
+        instanceMemoryMB: 512
+      }
     }
   }
 }
