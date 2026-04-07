@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using WalttiAnalyzer.Core.Models;
@@ -11,6 +12,8 @@ namespace WalttiAnalyzer.Web.Services;
 /// </summary>
 public class DataSyncBackgroundService : BackgroundService
 {
+    /// <summary>ActivitySource for distributed tracing of sync cycles.</summary>
+    public static readonly ActivitySource ActivitySource = new("WalttiAnalyzer.Sync", "1.0.0");
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly ILogger<DataSyncBackgroundService> _logger;
     private readonly WalttiSettings _settings;
@@ -46,6 +49,8 @@ public class DataSyncBackgroundService : BackgroundService
 
         _logger.LogInformation("Sync cycle started at {Time}", DateTimeOffset.Now);
 
+        using var cycleActivity = ActivitySource.StartActivity("SyncCycle");
+
         using var scope = _scopeFactory.CreateScope();
         var collector = scope.ServiceProvider.GetRequiredService<CollectorService>();
         var db = scope.ServiceProvider.GetRequiredService<DatabaseService>();
@@ -72,17 +77,29 @@ public class DataSyncBackgroundService : BackgroundService
             if (shouldDiscover)
             {
                 _logger.LogInformation("Running stop discovery");
+                using var discoverActivity = ActivitySource.StartActivity("DiscoverStops");
                 var stops = await collector.DiscoverStopsAsync();
+                discoverActivity?.SetTag("result.status", stops.GetValueOrDefault("status"));
                 _logger.LogInformation("Discovery result: {@Result}", stops);
             }
 
             _logger.LogInformation("Running daily collection");
-            var daily = await collector.CollectDailyAsync();
-            _logger.LogInformation("Daily collection result: {@Result}", daily);
+            using (var dailyActivity = ActivitySource.StartActivity("CollectDaily"))
+            {
+                var daily = await collector.CollectDailyAsync();
+                dailyActivity?.SetTag("result.status", daily.GetValueOrDefault("status"));
+                dailyActivity?.SetTag("result.departures", daily.GetValueOrDefault("departures"));
+                _logger.LogInformation("Daily collection result: {@Result}", daily);
+            }
 
             _logger.LogInformation("Running realtime poll");
-            var realtime = await collector.PollRealtimeOnceAsync();
-            _logger.LogInformation("Realtime poll result: {@Result}", realtime);
+            using (var realtimeActivity = ActivitySource.StartActivity("PollRealtime"))
+            {
+                var realtime = await collector.PollRealtimeOnceAsync();
+                realtimeActivity?.SetTag("result.status", realtime.GetValueOrDefault("status"));
+                realtimeActivity?.SetTag("result.updated", realtime.GetValueOrDefault("updated"));
+                _logger.LogInformation("Realtime poll result: {@Result}", realtime);
+            }
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -90,6 +107,7 @@ public class DataSyncBackgroundService : BackgroundService
         }
         catch (Exception ex)
         {
+            cycleActivity?.SetStatus(ActivityStatusCode.Error, ex.Message);
             _logger.LogError(ex, "Sync cycle failed");
         }
     }

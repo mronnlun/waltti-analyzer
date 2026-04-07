@@ -34,5 +34,6 @@
 
 ## Known Drift To Watch For
 
-- The database backend differs by environment: SQLite (`sqlite3`) locally and Azure SQL (ODBC) in production. Do not assume SQLite-only when working on deployment or database connection code.
-- The SQLite schema includes `realtime_states`; schema descriptions should list all five tables (stops, trips, realtime_states, observations, collection_log).
+- The database backend differs by environment: SQLite (via EF Core) locally and Azure SQL (via EF Core SQL Server provider) in production. Do not assume SQLite-only when working on deployment or database connection code.
+- The schema includes `realtime_states`; schema descriptions should list all five tables (stops, trips, realtime_states, observations, collection_log).
+- Upserts use `ON CONFLICT` syntax for SQLite and `MERGE` syntax for SQL Server. Provider is detected via `_context.Database.ProviderName`.

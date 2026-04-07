@@ -4,71 +4,56 @@ Bus punctuality analysis for Vaasa, Finland. Collects realtime delay data from t
 
 ## Architecture
 
-- **Backend**: Azure Functions (C#/.NET 8, isolated worker, consumption plan) — `api/WalttiAnalyzer.Functions/`
-- **Frontend**: Static SPA (HTML/CSS/JS) — `frontend/`
-- **Database**: SQLite locally, Azure SQL in production
+- **Backend**: ASP.NET Core (C#/.NET 10) — `src/WalttiAnalyzer.Web/` + `src/WalttiAnalyzer.Core/`
+- **Frontend**: Static SPA (HTML/CSS/JS) served by the web app — `frontend/`
+- **Database**: SQLite locally (via EF Core), Azure SQL in production (via EF Core)
 - **Infrastructure**: Bicep templates in `infra/`
 
 ### How it works
 
-1. **Timer-triggered function** (`SyncBusData`) runs every 5 minutes:
+1. **`DataSyncBackgroundService`** runs every 10 minutes (starts immediately on startup):
    - **Realtime polling** — every invocation captures current GPS-based delays before they disappear from the API
-   - **Daily collection** — at 03:00 and 23:00 Helsinki time, fetches full day schedules
+   - **Daily collection** — every invocation fetches full day schedules for all stops
    - **Stop discovery** — once per hour, or immediately on the first invocation of the day if stops haven't been fetched yet
-2. **HTTP-triggered functions** serve as the REST API backend for the SPA
-3. **SPA frontend** fetches data from the API and renders the dashboard, observations, and stops pages
+2. **Minimal API endpoints** serve as the REST API backend for the SPA
+3. **SPA frontend** is served as static files from `wwwroot/` and renders the dashboard, observations, and stops pages
 
 ## Quick Start (local development)
 
 ### Prerequisites
 
-- .NET 8 SDK
-- [Azure Functions Core Tools](https://learn.microsoft.com/en-us/azure/azure-functions/functions-run-local) (v4)
+- .NET 10 SDK
 - A Digitransit API key (free at https://portal.digitransit.fi)
 
 ### Setup
 
-**This step is required before running the project in any way — including pressing F5 in Visual Studio.**
-
 ```bash
-# Copy and configure local settings
-cp api/WalttiAnalyzer.Functions/local.settings.json.example api/WalttiAnalyzer.Functions/local.settings.json
-# Edit local.settings.json — add your DIGITRANSIT_API_KEY
+# Optionally create appsettings.Development.json with your API key:
+cat > src/WalttiAnalyzer.Web/appsettings.Development.json << 'JSON'
+{
+  "Waltti": {
+    "DigitransitApiKey": "your_api_key_here"
+  }
+}
+JSON
 ```
 
-`local.settings.json` is gitignored (it contains secrets) and must be created on every fresh clone.
-The file must exist and contain `FUNCTIONS_WORKER_RUNTIME=dotnet-isolated` before the project is opened in Visual Studio or started with `func start`. Without it:
+`appsettings.Development.json` is gitignored (it contains secrets).
 
-- Visual Studio will prompt **"Select the hosting model"** because it cannot determine in-process vs isolated worker.
-- The Azure Functions Core Tools will warn **"A default language needs to be set for isolated model projects"**.
-
-Both prompts disappear once `local.settings.json` is in place.
-
-### Run the backend
+### Run the app
 
 ```bash
-cd api/WalttiAnalyzer.Functions
-func start
+cd src/WalttiAnalyzer.Web
+dotnet run
 ```
 
-The API will be available at `http://localhost:7071/api/`.
-
-### Run the frontend
-
-Open `frontend/index.html` in a browser, or serve it with any static file server:
-
-```bash
-cd frontend
-python -m http.server 8080
-```
-
-Then open `http://localhost:8080`. By default the SPA calls `/api/*` — configure `window.WALTTI_API_BASE` in the browser console if the Function App runs on a different port.
+The app (API + frontend) will be available at `http://localhost:5000`.
 
 ## Building and Testing
 
 ```bash
-# Build the Function App
-dotnet build api/WalttiAnalyzer.Functions/WalttiAnalyzer.Functions.csproj
+# Build the web app
+dotnet build src/WalttiAnalyzer.Web/WalttiAnalyzer.Web.csproj
 
 # Run tests
 dotnet test tests/WalttiAnalyzer.Tests/WalttiAnalyzer.Tests.csproj
@@ -76,15 +61,17 @@ dotnet test tests/WalttiAnalyzer.Tests/WalttiAnalyzer.Tests.csproj
 
 ## Configuration
 
-| Variable | Default | Description |
-|---|---|---|
-| `DIGITRANSIT_API_KEY` | — | Required. API key for Digitransit |
-| `DIGITRANSIT_API_URL` | `https://api.digitransit.fi/routing/v2/waltti/gtfs/v1` | Digitransit endpoint |
-| `FEED_ID` | `Vaasa` | GTFS feed to collect data for |
-| `DEFAULT_STOP_ID` | `Vaasa:309392` | Default stop shown in the UI |
-| `DATABASE_PATH` | `data/waltti.db` | SQLite database path (local only) |
+Settings are bound from the `"Waltti"` config section (use `Waltti__Key` as environment variable names).
 
-In Azure, the database connection string is injected via the `DATABASE` connection string setting.
+| Setting | Default | Description |
+|---|---|---|
+| `Waltti__DigitransitApiKey` | — | Required. API key for Digitransit |
+| `Waltti__DigitransitApiUrl` | `https://api.digitransit.fi/routing/v2/waltti/gtfs/v1` | Digitransit endpoint |
+| `Waltti__FeedId` | `Vaasa` | GTFS feed to collect data for |
+| `Waltti__DefaultStopId` | `Vaasa:309392` | Default stop shown in the UI |
+| `Waltti__DatabasePath` | `data/waltti.db` | SQLite database path (local dev only) |
+
+In Azure, the `DATABASE` connection string overrides SQLite and uses Azure SQL via EF Core SQL Server provider.
 
 ## API Endpoints
 
@@ -99,6 +86,7 @@ In Azure, the database connection string is injected via the `DATABASE` connecti
 | GET | `/api/summary?stop_id=X&from=Y&to=Z` | Summary statistics |
 | GET | `/api/route-breakdown?stop_id=X&from=Y&to=Z` | Per-route statistics |
 | GET | `/api/delay-by-hour?stop_id=X&from=Y&to=Z` | Average delay by hour |
+| GET | `/health` | Health check (DB connectivity) |
 | POST | `/api/collect/daily` | Trigger daily collection |
 | POST | `/api/collect/realtime` | Trigger realtime poll |
 | POST | `/api/discover` | Trigger stop discovery |
@@ -107,13 +95,13 @@ In Azure, the database connection string is injected via the `DATABASE` connecti
 
 The project deploys to Azure via GitHub Actions (`.github/workflows/cd.yml`):
 
-1. **Infrastructure** — Bicep template creates a consumption-plan Function App, Static Web App, Azure SQL, and supporting resources
-2. **API** — Function App is published with `dotnet publish` and deployed via zip deployment
-3. **Frontend** — Static files are deployed to Azure Static Web Apps
+1. **Infrastructure** — Bicep template creates a B1 Linux App Service Plan, ASP.NET Core web app, Azure SQL, Log Analytics, and Application Insights
+2. **App** — Published with `dotnet publish` and deployed via zip deployment to Azure App Service
 
 ## Notes
 
-- The Digitransit API only exposes realtime delays while buses are running. Once service ends for the day, delay data disappears. The timer function captures this data before it is lost.
+- The Digitransit API only exposes realtime delays while buses are running. Once service ends for the day, delay data disappears. The background service captures this data before it is lost.
 - Delays beyond ±30 minutes are flagged as suspect GPS data and excluded from statistics.
 - All times are stored in UTC; display output uses Europe/Helsinki timezone.
 - Holiday/no-service detection: all patterns return empty stoptimes → logged as no-service.
+- OpenTelemetry is configured with Azure Monitor exporter (`APPLICATIONINSIGHTS_CONNECTION_STRING` env var). Custom traces are emitted from `DataSyncBackgroundService` with the `WalttiAnalyzer.Sync` activity source.

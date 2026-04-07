@@ -1,3 +1,4 @@
+using Azure.Monitor.OpenTelemetry.AspNetCore;
 using System.Text.Json.Serialization;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
@@ -52,6 +53,21 @@ builder.Services.AddHttpClient<DigitransitClient>((sp, client) =>
 builder.Services.AddHostedService<DataSyncBackgroundService>();
 
 // -----------------------------------------------------------------------
+// OpenTelemetry with Azure Monitor / Application Insights
+// -----------------------------------------------------------------------
+
+builder.Services.AddOpenTelemetry()
+    .UseAzureMonitor()
+    .WithTracing(tracing => tracing.AddSource(DataSyncBackgroundService.ActivitySource.Name));
+
+// -----------------------------------------------------------------------
+// Health checks
+// -----------------------------------------------------------------------
+
+builder.Services.AddHealthChecks()
+    .AddDbContextCheck<WalttiDbContext>();
+
+// -----------------------------------------------------------------------
 // HTTP / JSON / CORS
 // -----------------------------------------------------------------------
 
@@ -79,6 +95,8 @@ using (var scope = app.Services.CreateScope())
 app.UseCors();
 app.UseDefaultFiles();
 app.UseStaticFiles();
+
+app.MapHealthChecks("/health");
 
 // -----------------------------------------------------------------------
 // API routes
