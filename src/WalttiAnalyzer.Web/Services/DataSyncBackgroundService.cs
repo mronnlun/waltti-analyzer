@@ -66,7 +66,7 @@ public class DataSyncBackgroundService : BackgroundService
             {
                 var lastTime = TimeZoneInfo.ConvertTime(
                     DateTimeOffset.FromUnixTimeSeconds(lastDiscovery.QueriedAt), HelsinkiTz);
-                shouldDiscover = lastTime.Date < now.Date || now.Minute < 5;
+                shouldDiscover = lastTime.Date < now.Date || (now - lastTime).TotalMinutes >= 50;
             }
 
             if (shouldDiscover)
