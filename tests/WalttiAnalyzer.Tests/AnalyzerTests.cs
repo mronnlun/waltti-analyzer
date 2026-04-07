@@ -165,7 +165,7 @@ public class AnalyzerTests : IDisposable
                 ["scheduled_arrival"] = scheduledDep - 100,
                 ["scheduled_departure"] = scheduledDep,
                 ["realtime_arrival"] = realtime ? scheduledDep - 100 + delay : null,
-                ["realtime_departure"] = realtime ? scheduledDep + delay : (object?)null,
+                ["realtime_departure"] = realtime ? scheduledDep + delay : null,
                 ["arrival_delay"] = realtime ? delay : 0,
                 ["departure_delay"] = realtime ? delay : 0,
                 ["realtime"] = realtime ? 1 : 0,

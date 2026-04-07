@@ -21,6 +21,9 @@ public class DataSyncBackgroundService : BackgroundService
     private static readonly TimeZoneInfo HelsinkiTz =
         TimeZoneInfo.FindSystemTimeZoneById("Europe/Helsinki");
 
+    /// <summary>Minimum minutes between stop discovery runs within the same day.</summary>
+    private const int DiscoveryIntervalMinutes = 50;
+
     public DataSyncBackgroundService(IServiceScopeFactory scopeFactory,
         ILogger<DataSyncBackgroundService> logger, IOptions<WalttiSettings> settings)
     {
@@ -71,7 +74,7 @@ public class DataSyncBackgroundService : BackgroundService
             {
                 var lastTime = TimeZoneInfo.ConvertTime(
                     DateTimeOffset.FromUnixTimeSeconds(lastDiscovery.QueriedAt), HelsinkiTz);
-                shouldDiscover = lastTime.Date < now.Date || (now - lastTime).TotalMinutes >= 50;
+                shouldDiscover = lastTime.Date < now.Date || (now - lastTime).TotalMinutes >= DiscoveryIntervalMinutes;
             }
 
             if (shouldDiscover)

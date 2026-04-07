@@ -166,11 +166,11 @@ public class DatabaseService
 
             var sd = (string)obs["service_date"]!;
             var sDep = Convert.ToInt32(obs["scheduled_departure"]);
-            int? sArr = obs.GetValueOrDefault("scheduled_arrival") is { } sa && sa != null ? Convert.ToInt32(sa) : null;
-            int? rtArr = obs.GetValueOrDefault("realtime_arrival") is { } ra && ra != null ? Convert.ToInt32(ra) : null;
-            int? rtDep = obs.GetValueOrDefault("realtime_departure") is { } rd && rd != null ? Convert.ToInt32(rd) : null;
-            int? aDelay = obs.GetValueOrDefault("arrival_delay") is { } ad && ad != null ? Convert.ToInt32(ad) : null;
-            int? dDelay = obs.GetValueOrDefault("departure_delay") is { } dd && dd != null ? Convert.ToInt32(dd) : null;
+            int? sArr = GetNullableInt(obs, "scheduled_arrival");
+            int? rtArr = GetNullableInt(obs, "realtime_arrival");
+            int? rtDep = GetNullableInt(obs, "realtime_departure");
+            int? aDelay = GetNullableInt(obs, "arrival_delay");
+            int? dDelay = GetNullableInt(obs, "departure_delay");
             var rt = Convert.ToInt32(obs["realtime"]);
             var stateStr = obs.GetValueOrDefault("realtime_state") as string;
             int? stateId = stateStr != null && states.TryGetValue(stateStr, out var sId) ? sId : null;
@@ -294,6 +294,12 @@ public class DatabaseService
         if (!string.IsNullOrEmpty(route)) { sql += " AND t.route_short_name=@route"; parms.Add(("@route", route)); }
         if (timeFrom.HasValue) { sql += " AND o.scheduled_departure>=@tf"; parms.Add(("@tf", timeFrom.Value)); }
         if (timeTo.HasValue) { sql += " AND o.scheduled_departure<=@tt"; parms.Add(("@tt", timeTo.Value)); }
+    }
+
+    private static int? GetNullableInt(Dictionary<string, object?> dict, string key)
+    {
+        var val = dict.GetValueOrDefault(key);
+        return val != null ? Convert.ToInt32(val) : null;
     }
 
     private async Task<List<Observation>> ReadObservationsRawAsync(
