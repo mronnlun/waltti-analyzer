@@ -1,4 +1,4 @@
-using WalttiAnalyzer.Functions.Services;
+using WalttiAnalyzer.Core.Services;
 using Xunit;
 
 namespace WalttiAnalyzer.Tests;
@@ -10,63 +10,57 @@ public class DatabaseTests : IDisposable
     public void Dispose() => _fixture.Dispose();
 
     [Fact]
-    public void UpsertAndGetStop()
+    public async Task UpsertAndGetStop()
     {
-        using var db = _fixture.Connect();
-        _fixture.Db.UpsertStop(db, "Vaasa:309392", "Gerbynmäentie", null, 63.14, 21.57);
-        var stop = _fixture.Db.GetStop(db, "Vaasa:309392");
+        await _fixture.Db.UpsertStopAsync("Vaasa:309392", "Gerbynmäentie", null, 63.14, 21.57);
+        var stop = await _fixture.Db.GetStopAsync("Vaasa:309392");
         Assert.NotNull(stop);
         Assert.Equal("Gerbynmäentie", stop.Name);
         Assert.Equal(63.14, stop.Lat);
     }
 
     [Fact]
-    public void UpsertStopUpdates()
+    public async Task UpsertStopUpdates()
     {
-        using var db = _fixture.Connect();
-        _fixture.Db.UpsertStop(db, "Vaasa:309392", "Old Name", null, 63.14, 21.57);
-        _fixture.Db.UpsertStop(db, "Vaasa:309392", "New Name", null, 63.14, 21.57);
-        var stop = _fixture.Db.GetStop(db, "Vaasa:309392");
+        await _fixture.Db.UpsertStopAsync("Vaasa:309392", "Old Name", null, 63.14, 21.57);
+        await _fixture.Db.UpsertStopAsync("Vaasa:309392", "New Name", null, 63.14, 21.57);
+        var stop = await _fixture.Db.GetStopAsync("Vaasa:309392");
         Assert.Equal("New Name", stop!.Name);
     }
 
     [Fact]
-    public void UpsertObservation()
+    public async Task UpsertObservation()
     {
-        using var db = _fixture.Connect();
-        EnsureTrip(db, "Vaasa:trip1");
-        var obs = MakeObs("Vaasa:trip1");
-        _fixture.Db.UpsertObservation(db, obs);
-        var rows = _fixture.Db.GetObservations(db, "Vaasa:309392", "2026-04-02", "2026-04-02");
+        await EnsureTripAsync("Vaasa:trip1");
+        await _fixture.Db.UpsertObservationsBatchAsync([MakeObs("Vaasa:trip1")]);
+        var rows = await _fixture.Db.GetObservationsAsync("Vaasa:309392", "2026-04-02", "2026-04-02");
         Assert.Single(rows);
         Assert.Equal("3", rows[0].RouteShortName);
     }
 
     [Fact]
-    public void UpsertObservationUpdatesOnConflict()
+    public async Task UpsertObservationUpdatesOnConflict()
     {
-        using var db = _fixture.Connect();
-        EnsureTrip(db, "Vaasa:trip1");
+        await EnsureTripAsync("Vaasa:trip1");
         var obs = MakeObs("Vaasa:trip1");
-        _fixture.Db.UpsertObservation(db, obs);
+        await _fixture.Db.UpsertObservationsBatchAsync([obs]);
 
         // Update with realtime data
         obs["realtime"] = 1;
         obs["departure_delay"] = 120;
         obs["realtime_departure"] = 24220;
         obs["realtime_state"] = "UPDATED";
-        _fixture.Db.UpsertObservation(db, obs);
+        await _fixture.Db.UpsertObservationsBatchAsync([obs]);
 
-        var rows = _fixture.Db.GetObservations(db, "Vaasa:309392", "2026-04-02", "2026-04-02");
+        var rows = await _fixture.Db.GetObservationsAsync("Vaasa:309392", "2026-04-02", "2026-04-02");
         Assert.Single(rows);
         Assert.Equal(1, rows[0].Realtime);
         Assert.Equal(120, rows[0].DepartureDelay);
     }
 
     [Fact]
-    public void BatchUpsert()
+    public async Task BatchUpsert()
     {
-        using var db = _fixture.Connect();
         var trips = Enumerable.Range(0, 5).Select(i => new Dictionary<string, object?>
         {
             ["gtfs_id"] = $"Vaasa:trip{i}",
@@ -76,44 +70,44 @@ public class DatabaseTests : IDisposable
             ["headsign"] = "Keskusta",
             ["direction_id"] = 1,
         }).ToList();
-        _fixture.Db.UpsertTripsBatch(db, trips);
+        await _fixture.Db.UpsertTripsBatchAsync(trips);
 
-        var observations = Enumerable.Range(0, 5).Select(i => MakeObs($"Vaasa:trip{i}", scheduledDep: 24100 + i * 1800)).ToList();
-        _fixture.Db.UpsertObservationsBatch(db, observations);
+        var observations = Enumerable.Range(0, 5)
+            .Select(i => MakeObs($"Vaasa:trip{i}", scheduledDep: 24100 + i * 1800))
+            .ToList();
+        await _fixture.Db.UpsertObservationsBatchAsync(observations);
 
-        var rows = _fixture.Db.GetObservations(db, "Vaasa:309392", "2026-04-02", "2026-04-02");
+        var rows = await _fixture.Db.GetObservationsAsync("Vaasa:309392", "2026-04-02", "2026-04-02");
         Assert.Equal(5, rows.Count);
     }
 
     [Fact]
-    public void GetObservationsWithRouteFilter()
+    public async Task GetObservationsWithRouteFilter()
     {
-        using var db = _fixture.Connect();
-        EnsureTrip(db, "Vaasa:trip_a", "3");
-        EnsureTrip(db, "Vaasa:trip_b", "9");
-        _fixture.Db.UpsertObservation(db, MakeObs("Vaasa:trip_a"));
-        _fixture.Db.UpsertObservation(db, MakeObs("Vaasa:trip_b"));
+        await EnsureTripAsync("Vaasa:trip_a", "3");
+        await EnsureTripAsync("Vaasa:trip_b", "9");
+        await _fixture.Db.UpsertObservationsBatchAsync([MakeObs("Vaasa:trip_a")]);
+        await _fixture.Db.UpsertObservationsBatchAsync([MakeObs("Vaasa:trip_b")]);
 
-        var all = _fixture.Db.GetObservations(db, "Vaasa:309392", "2026-04-02", "2026-04-02");
+        var all = await _fixture.Db.GetObservationsAsync("Vaasa:309392", "2026-04-02", "2026-04-02");
         Assert.Equal(2, all.Count);
 
-        var route3 = _fixture.Db.GetObservations(db, "Vaasa:309392", "2026-04-02", "2026-04-02", route: "3");
+        var route3 = await _fixture.Db.GetObservationsAsync("Vaasa:309392", "2026-04-02", "2026-04-02", route: "3");
         Assert.Single(route3);
         Assert.Equal("3", route3[0].RouteShortName);
     }
 
     [Fact]
-    public void CollectionLog()
+    public async Task CollectionLog()
     {
-        using var db = _fixture.Connect();
-        _fixture.Db.LogCollection(db, "Vaasa:309392", "daily", "2026-04-02", departuresFound: 20);
-        _fixture.Db.LogCollection(db, "Vaasa:309392", "realtime", departuresFound: 5);
+        await _fixture.Db.LogCollectionAsync("Vaasa:309392", "daily", "2026-04-02", departuresFound: 20);
+        await _fixture.Db.LogCollectionAsync("Vaasa:309392", "realtime", departuresFound: 5);
 
-        var daily = _fixture.Db.GetLatestCollection(db, "Vaasa:309392", "daily");
+        var daily = await _fixture.Db.GetLatestCollectionAsync("Vaasa:309392", "daily");
         Assert.NotNull(daily);
         Assert.Equal(20, daily.DeparturesFound);
 
-        var rt = _fixture.Db.GetLatestCollection(db, "Vaasa:309392", "realtime");
+        var rt = await _fixture.Db.GetLatestCollectionAsync("Vaasa:309392", "realtime");
         Assert.NotNull(rt);
         Assert.Equal(5, rt.DeparturesFound);
     }
@@ -122,9 +116,17 @@ public class DatabaseTests : IDisposable
     // Helpers
     // -----------------------------------------------------------------------
 
-    private void EnsureTrip(Microsoft.Data.Sqlite.SqliteConnection db, string tripId, string route = "3")
+    private async Task EnsureTripAsync(string tripId, string route = "3")
     {
-        _fixture.Db.UpsertTrip(db, tripId, route, "Gerby - Keskusta", "BUS", "Keskusta", 1);
+        await _fixture.Db.UpsertTripsBatchAsync([new Dictionary<string, object?>
+        {
+            ["gtfs_id"] = tripId,
+            ["route_short_name"] = route,
+            ["route_long_name"] = "Gerby - Keskusta",
+            ["mode"] = "BUS",
+            ["headsign"] = "Keskusta",
+            ["direction_id"] = 1,
+        }]);
     }
 
     private static Dictionary<string, object?> MakeObs(string tripId,

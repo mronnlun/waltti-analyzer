@@ -26,14 +26,12 @@ jobs:
     runs-on: ubuntu-latest
     if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
     outputs:
-      functionAppName: ${{ steps.deploy.outputs.functionAppName }}
-      staticWebAppName: ${{ steps.deploy.outputs.staticWebAppName }}
+      webAppName: ${{ steps.set-outputs.outputs.webAppName }}
     steps:
       - name: Set resource outputs
-        id: deploy
+        id: set-outputs
         run: |
-          echo "functionAppName=${{ env.AZURE_PROJECT_NAME }}-${{ env.AZURE_ENV }}-func" >> $GITHUB_OUTPUT
-          echo "staticWebAppName=${{ env.AZURE_PROJECT_NAME }}-${{ env.AZURE_ENV }}-swa" >> $GITHUB_OUTPUT
+          echo "webAppName=${{ env.AZURE_PROJECT_NAME }}-${{ env.AZURE_ENV }}-app" >> $GITHUB_OUTPUT
 
       # Bicep deployment is temporarily skipped
       # - name: Create resource group
@@ -66,7 +64,7 @@ jobs:
         if: ${{ github.event_name == 'workflow_run' }}
         uses: actions/download-artifact@v4
         with:
-          name: function-app
+          name: web-app
           path: ./publish
           run-id: ${{ github.event.workflow_run.id }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
@@ -80,15 +78,15 @@ jobs:
         with:
           dotnet-version: "10.0.x"
 
-      - name: Publish Function App (manual dispatch)
+      - name: Publish Web App (manual dispatch)
         if: ${{ github.event_name == 'workflow_dispatch' }}
         run: |
-          dotnet publish api/WalttiAnalyzer.Functions/WalttiAnalyzer.Functions.csproj \
+          dotnet publish src/WalttiAnalyzer.Web/WalttiAnalyzer.Web.csproj \
             --configuration Release \
             --output ./publish
 
       - name: Create deployment zip
-        run: cd publish && zip -r ../api-deploy.zip .
+        run: cd publish && zip -r ../app-deploy.zip .
 
       - name: Azure Login
         uses: azure/login@v3
@@ -97,42 +95,9 @@ jobs:
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
-      - name: Deploy Function App
+      - name: Deploy Web App
         run: |
-          az functionapp deployment source config-zip \
+          az webapp deployment source config-zip \
             --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
-            --name ${{ needs.deploy-infra.outputs.functionAppName }} \
-            --src api-deploy.zip
-
-  deploy-frontend:
-    needs: deploy-infra
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v5
-
-      - name: Azure Login
-        uses: azure/login@v3
-        with:
-          client-id: ${{ secrets.AZURE_CLIENT_ID }}
-          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
-          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
-
-      - name: Get SWA deployment token
-        id: swa-token
-        run: |
-          token=$(az staticwebapp secrets list \
-            --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
-            --name ${{ needs.deploy-infra.outputs.staticWebAppName }} \
-            --query 'properties.apiKey' -o tsv)
-          echo "::add-mask::$token"
-          echo "token=$token" >> $GITHUB_OUTPUT
-
-      - name: Deploy Static Web App
-        uses: Azure/static-web-apps-deploy@v1
-        with:
-          azure_static_web_apps_api_token: ${{ steps.swa-token.outputs.token }}
-          repo_token: ${{ secrets.GITHUB_TOKEN }}
-          action: upload
-          app_location: frontend
-          skip_app_build: true
-          skip_api_build: true
+            --name ${{ needs.deploy-infra.outputs.webAppName }} \
+            --src app-deploy.zip

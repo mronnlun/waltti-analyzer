@@ -1,31 +1,41 @@
 using Microsoft.Data.Sqlite;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
-using WalttiAnalyzer.Functions.Services;
+using WalttiAnalyzer.Core.Data;
+using WalttiAnalyzer.Core.Services;
 
 namespace WalttiAnalyzer.Tests;
 
-/// <summary>Shared helpers for tests that need a seeded SQLite database.</summary>
+/// <summary>Shared helpers for tests that need a seeded in-memory SQLite database.</summary>
 public class TestDbFixture : IDisposable
 {
-    public string DbPath { get; }
+    private readonly SqliteConnection _keepAliveConnection;
+    public WalttiDbContext Context { get; }
     public DatabaseService Db { get; }
 
     public TestDbFixture()
     {
-        DbPath = Path.Combine(Path.GetTempPath(), $"waltti_test_{Guid.NewGuid()}.db");
-        Db = new DatabaseService(NullLogger<DatabaseService>.Instance);
-        Db.InitDb(DbPath);
+        // Keep a connection open so the in-memory SQLite DB persists across operations.
+        _keepAliveConnection = new SqliteConnection("Data Source=:memory:");
+        _keepAliveConnection.Open();
+
+        var options = new DbContextOptionsBuilder<WalttiDbContext>()
+            .UseSqlite(_keepAliveConnection)
+            .Options;
+
+        Context = new WalttiDbContext(options);
+        Context.Database.EnsureCreated();
+
+        Db = new DatabaseService(Context, NullLogger<DatabaseService>.Instance);
 
         // Seed default test stop
-        using var conn = Db.Connect(DbPath);
-        Db.UpsertStop(conn, "Vaasa:309392", "Gerbynmäentie", null, 63.14, 21.57);
+        Db.UpsertStopAsync("Vaasa:309392", "Gerbynmäentie", null, 63.14, 21.57).GetAwaiter().GetResult();
     }
-
-    public SqliteConnection Connect() => Db.Connect(DbPath);
 
     public void Dispose()
     {
-        try { File.Delete(DbPath); } catch { /* best effort */ }
+        Context.Dispose();
+        _keepAliveConnection.Dispose();
         GC.SuppressFinalize(this);
     }
 }
