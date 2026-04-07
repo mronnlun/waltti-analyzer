@@ -34,6 +34,8 @@ public class SyncBusDataFunction
     [Function("SyncBusData")]
     public async Task Run([TimerTrigger("0 */10 * * * *", RunOnStartup = true)] TimerInfo timer)
     {
+        _logger.LogInformation("SyncBusDataFunction triggered at: {Time}", DateTimeOffset.Now);
+
         var apiUrl = _settings.DigitransitApiUrl;
         var apiKey = _settings.DigitransitApiKey;
         var feedId = _settings.FeedId;
