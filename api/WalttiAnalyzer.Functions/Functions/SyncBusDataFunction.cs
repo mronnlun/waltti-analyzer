@@ -26,13 +26,13 @@ public class SyncBusDataFunction
     }
 
     /// <summary>
-    /// Runs every 5 minutes. Always polls realtime data.
+    /// Runs every 10 minutes (and on startup). Always polls realtime data.
     /// At 03:xx/23:xx runs daily collection.
     /// Discovers stops once per hour, or immediately if not yet fetched today.
     /// </summary>
     // NCRONTAB: sec min hour day month dayOfWeek
     [Function("SyncBusData")]
-    public async Task Run([TimerTrigger("0 */5 * * * *")] TimerInfo timer)
+    public async Task Run([TimerTrigger("0 */10 * * * *", RunOnStartup = true)] TimerInfo timer)
     {
         var apiUrl = _settings.DigitransitApiUrl;
         var apiKey = _settings.DigitransitApiKey;
