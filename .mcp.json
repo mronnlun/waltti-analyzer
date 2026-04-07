@@ -3,7 +3,27 @@
     "playwright": {
       "type": "stdio",
       "command": "npx",
-      "args": ["@playwright/mcp@latest"]
+      "args": [
+        "@playwright/mcp@latest"
+      ]
+    },
+    "microsoft-learn": {
+      "transport": "http",
+      "url": "https://learn.microsoft.com/api/mcp"
+    },
+    "Azure MCP Server": {
+      "command": "dnx",
+      "args": [
+        "Azure.Mcp",
+        "--source",
+        "https://api.nuget.org/v3/index.json",
+        "--yes",
+        "--",
+        "azmcp",
+        "server",
+        "start"
+      ],
+      "type": "stdio"
     }
   }
 }
