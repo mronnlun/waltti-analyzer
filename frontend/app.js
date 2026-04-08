@@ -193,22 +193,25 @@ async function renderDashboard(container) {
       fetchJSON("stops"),
       fetchJSON("status"),
     ]);
-    const sel = document.getElementById("stop-select");
-    sel.innerHTML = stops
-      .map(
-        (s) =>
-          `<option value="${escapeHtml(s.gtfs_id)}">${escapeHtml(s.name)} (${escapeHtml(s.gtfs_id)})</option>`
-      )
-      .join("");
-
     stopSelect = new TomSelect("#stop-select", {
       placeholder: "Select a stop…",
-      allowEmptyOption: false,
+      valueField: "value",
+      labelField: "name",
+      searchField: ["name", "id"],
+      options: stops.map((s) => ({ value: s.gtfs_id, name: s.name, id: s.gtfs_id })),
+      items: status.default_stop_id ? [status.default_stop_id] : [],
+      render: {
+        option: function (data, escape) {
+          return `<div class="option ts-stop-option">
+            <span class="ts-stop-name">${escape(data.name)}</span>
+            <span class="ts-stop-id">${escape(data.id)}</span>
+          </div>`;
+        },
+        item: function (data, escape) {
+          return `<div class="item" title="${escape(data.name)} (${escape(data.id)})">${escape(data.name)}</div>`;
+        },
+      },
     });
-
-    if (status.default_stop_id) {
-      stopSelect.setValue(status.default_stop_id);
-    }
   } catch {
     document.getElementById("stop-select").innerHTML =
       '<option value="">Failed to load stops</option>';
