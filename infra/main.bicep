@@ -41,7 +41,7 @@ param notificationEmail string = ''
 var sqlServerName = toLower('${projectName}-${env}-sql')
 
 // --- App Service Plan (Basic B1 — required for AlwaysOn) ---
-resource appServicePlan 'Microsoft.Web/serverfarms@2024-11-01' = {
+resource appServicePlan 'Microsoft.Web/serverfarms@2025-03-01' = {
   name: '${projectName}-${env}-plan'
   location: location
   kind: 'linux'
@@ -55,7 +55,7 @@ resource appServicePlan 'Microsoft.Web/serverfarms@2024-11-01' = {
 }
 
 // --- Azure SQL Server ---
-resource sqlServer 'Microsoft.Sql/servers@2023-08-01-preview' = {
+resource sqlServer 'Microsoft.Sql/servers@2025-02-01-preview' = {
   name: sqlServerName
   location: location
   properties: {
@@ -67,7 +67,7 @@ resource sqlServer 'Microsoft.Sql/servers@2023-08-01-preview' = {
 }
 
 // --- Allow Azure services to access SQL Server ---
-resource sqlFirewallAllowAzure 'Microsoft.Sql/servers/firewallRules@2023-08-01-preview' = {
+resource sqlFirewallAllowAzure 'Microsoft.Sql/servers/firewallRules@2025-02-01-preview' = {
   parent: sqlServer
   name: 'AllowAzureServices'
   properties: {
@@ -77,7 +77,7 @@ resource sqlFirewallAllowAzure 'Microsoft.Sql/servers/firewallRules@2023-08-01-p
 }
 
 // --- Azure SQL Database (Basic tier — 2 GB, ~$5/month) ---
-resource sqlDatabase 'Microsoft.Sql/servers/databases@2023-08-01-preview' = {
+resource sqlDatabase 'Microsoft.Sql/servers/databases@2025-02-01-preview' = {
   parent: sqlServer
   name: '${projectName}-${env}-sqldb'
   location: location
@@ -91,7 +91,7 @@ resource sqlDatabase 'Microsoft.Sql/servers/databases@2023-08-01-preview' = {
 }
 
 // --- SQL Database Automatic Tuning ---
-resource sqlAutoTuning 'Microsoft.Sql/servers/databases/advisors@2014-04-01' = {
+resource sqlAutoTuning 'Microsoft.Sql/servers/databases/advisors@2022-05-01-preview' = {
   parent: sqlDatabase
   name: 'ForceLastGoodPlan'
   properties: {
@@ -99,7 +99,7 @@ resource sqlAutoTuning 'Microsoft.Sql/servers/databases/advisors@2014-04-01' = {
   }
 }
 
-resource sqlAutoTuningCreateIndex 'Microsoft.Sql/servers/databases/advisors@2014-04-01' = {
+resource sqlAutoTuningCreateIndex 'Microsoft.Sql/servers/databases/advisors@2022-05-01-preview' = {
   parent: sqlDatabase
   name: 'CreateIndex'
   properties: {
@@ -107,7 +107,7 @@ resource sqlAutoTuningCreateIndex 'Microsoft.Sql/servers/databases/advisors@2014
   }
 }
 
-resource sqlAutoTuningDropIndex 'Microsoft.Sql/servers/databases/advisors@2014-04-01' = {
+resource sqlAutoTuningDropIndex 'Microsoft.Sql/servers/databases/advisors@2022-05-01-preview' = {
   parent: sqlDatabase
   name: 'DropIndex'
   properties: {
@@ -116,7 +116,7 @@ resource sqlAutoTuningDropIndex 'Microsoft.Sql/servers/databases/advisors@2014-0
 }
 
 // --- Log Analytics Workspace (required by Application Insights) ---
-resource logAnalytics 'Microsoft.OperationalInsights/workspaces@2023-09-01' = {
+resource logAnalytics 'Microsoft.OperationalInsights/workspaces@2025-07-01' = {
   name: '${projectName}-${env}-log'
   location: location
   properties: {
@@ -142,7 +142,7 @@ resource appInsights 'Microsoft.Insights/components@2020-02-02' = {
 var sqlConnectionString = 'Server=tcp:${sqlServer.properties.fullyQualifiedDomainName},1433;Database=${sqlDatabase.name};User Id=${sqlAdminLogin};Password=${sqlAdminPassword};Encrypt=yes;TrustServerCertificate=no;Connection Timeout=30;'
 
 // --- ASP.NET Core Web App ---
-resource webApp 'Microsoft.Web/sites@2024-11-01' = {
+resource webApp 'Microsoft.Web/sites@2025-03-01' = {
   name: '${projectName}-${env}-app'
   location: location
   kind: 'app,linux'
