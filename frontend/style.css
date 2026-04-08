@@ -282,6 +282,45 @@ button:hover {
     font-size: 0.9rem;
 }
 
+/* Tom-Select stop option: two-line layout */
+.ts-stop-option {
+    line-height: 1.3;
+    padding: 0.1rem 0;
+}
+
+.ts-stop-name {
+    display: block;
+    font-weight: 500;
+}
+
+.ts-stop-id {
+    display: block;
+    font-size: 0.78rem;
+    color: #7f8c8d;
+}
+
+/* Tom-Select fixes */
+.ts-wrapper {
+    min-width: 0; /* allow flex shrink */
+}
+
+.ts-control .item {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 100%;
+}
+
+.ts-dropdown .ts-dropdown-content {
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior: contain;
+}
+
+.ts-dropdown .option {
+    white-space: normal;
+    word-break: break-word;
+}
+
 /* Responsive */
 @media (max-width: 600px) {
     .controls {
@@ -292,5 +331,18 @@ button:hover {
     }
     .cards {
         grid-template-columns: 1fr 1fr;
+    }
+
+    .ts-dropdown .ts-dropdown-content {
+        max-height: 45vh;
+    }
+
+    .ts-dropdown .option {
+        padding: 0.6rem 0.75rem;
+        font-size: 1rem; /* prevent iOS zoom on focus */
+    }
+
+    .ts-control input {
+        font-size: 1rem; /* prevent iOS zoom on focus */
     }
 }

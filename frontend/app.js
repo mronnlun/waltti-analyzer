@@ -161,7 +161,7 @@ async function renderDashboard(container) {
         </div>
         <div class="filter-row-route">
           <label for="route-select">Route</label>
-          <select id="route-select"><option value="">All routes</option></select>
+          <select id="route-select"></select>
         </div>
         <div class="filter-row-time">
           <label>Time from <input type="time" id="time-from"></label>
@@ -178,7 +178,13 @@ async function renderDashboard(container) {
   `;
 
   routeSelect = new TomSelect("#route-select", {
-    allowEmptyOption: true,
+    placeholder: "All routes",
+    plugins: ["clear_button"],
+    render: {
+      option: function (data, escape) {
+        return `<div class="option" title="${escape(data.text)}">${escape(data.text)}</div>`;
+      },
+    },
   });
 
   // Load stops and settings in parallel
@@ -187,22 +193,25 @@ async function renderDashboard(container) {
       fetchJSON("stops"),
       fetchJSON("status"),
     ]);
-    const sel = document.getElementById("stop-select");
-    sel.innerHTML = stops
-      .map(
-        (s) =>
-          `<option value="${escapeHtml(s.gtfs_id)}">${escapeHtml(s.name)} (${escapeHtml(s.gtfs_id)})</option>`
-      )
-      .join("");
-
     stopSelect = new TomSelect("#stop-select", {
       placeholder: "Select a stop…",
-      allowEmptyOption: false,
+      valueField: "value",
+      labelField: "name",
+      searchField: ["name", "id"],
+      options: stops.map((s) => ({ value: s.gtfs_id, name: s.name, id: s.gtfs_id })),
+      items: status.default_stop_id ? [status.default_stop_id] : [],
+      render: {
+        option: function (data, escape) {
+          return `<div class="option ts-stop-option">
+            <span class="ts-stop-name">${escape(data.name)}</span>
+            <span class="ts-stop-id">${escape(data.id)}</span>
+          </div>`;
+        },
+        item: function (data, escape) {
+          return `<div class="item" title="${escape(data.name)} (${escape(data.id)})">${escape(data.name)}</div>`;
+        },
+      },
     });
-
-    if (status.default_stop_id) {
-      stopSelect.setValue(status.default_stop_id);
-    }
   } catch {
     document.getElementById("stop-select").innerHTML =
       '<option value="">Failed to load stops</option>';
@@ -251,11 +260,12 @@ async function loadDashboardData() {
     if (routeSelect) {
       const currentRoute = routeSelect.getValue();
       routeSelect.clearOptions();
-      routeSelect.addOptions([
-        { value: "", text: "All routes" },
-        ...stopRoutes.map((r) => ({ value: r, text: r })),
-      ]);
-      routeSelect.setValue(stopRoutes.includes(currentRoute) ? currentRoute : "", true);
+      routeSelect.addOptions(stopRoutes.map((r) => ({ value: r, text: r })));
+      if (stopRoutes.includes(currentRoute)) {
+        routeSelect.setValue(currentRoute, true);
+      } else {
+        routeSelect.clear(true);
+      }
     }
 
     document.getElementById("action-status").textContent = "";
