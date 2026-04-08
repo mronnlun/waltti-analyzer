@@ -62,7 +62,7 @@ jobs:
     steps:
       - name: Download build artifact from CI
         if: ${{ github.event_name == 'workflow_run' }}
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v6
         with:
           name: web-app
           path: ./publish
@@ -73,7 +73,7 @@ jobs:
         if: ${{ github.event_name == 'workflow_dispatch' }}
         uses: actions/checkout@v5
 
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/setup-dotnet@v5
         if: ${{ github.event_name == 'workflow_dispatch' }}
         with:
           dotnet-version: "10.0.x"
