@@ -94,7 +94,15 @@ using (var scope = app.Services.CreateScope())
 
 app.UseCors();
 app.UseDefaultFiles();
-app.UseStaticFiles();
+app.UseStaticFiles(new StaticFileOptions
+{
+    OnPrepareResponse = ctx =>
+    {
+        var ext = Path.GetExtension(ctx.File.Name);
+        if (ext is ".js" or ".css")
+            ctx.Context.Response.Headers.CacheControl = "no-cache";
+    }
+});
 
 app.MapHealthChecks("/health");
 
