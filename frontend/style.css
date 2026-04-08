@@ -84,19 +84,23 @@ h2 {
     width: 100%;
 }
 
-.filter-row-stop {
+.filter-row-stop,
+.filter-row-route {
     display: flex;
     align-items: center;
     gap: 0.5rem;
 }
 
-.filter-row-stop label {
+.filter-row-stop label,
+.filter-row-route label {
     font-size: 0.9rem;
     flex-shrink: 0;
 }
 
 .filter-row-stop select,
-.filter-row-stop .ts-wrapper {
+.filter-row-stop .ts-wrapper,
+.filter-row-route select,
+.filter-row-route .ts-wrapper {
     flex: 1;
 }
 
