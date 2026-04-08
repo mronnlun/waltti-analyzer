@@ -154,6 +154,9 @@ async function renderDashboard(container) {
     e.preventDefault();
     await loadDashboardData();
   });
+
+  // Auto-load data for the initially selected stop
+  await loadDashboardData();
 }
 
 async function loadDashboardData() {
