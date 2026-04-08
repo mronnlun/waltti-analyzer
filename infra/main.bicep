@@ -37,9 +37,6 @@ var budgetStartDate = '${substring(currentDate, 0, 7)}-01'
 @description('Email address for budget alert notifications (leave empty to skip budget alerts)')
 param notificationEmail string = ''
 
-@description('Object ID of the service principal that AI agents use to authenticate to Azure. When provided, the principal is granted Monitoring Reader on the Log Analytics workspace.')
-param agentPrincipalId string = ''
-
 // SQL Server names must be globally unique and lowercase
 var sqlServerName = toLower('${projectName}-${env}-sql')
 
@@ -102,19 +99,6 @@ resource logAnalytics 'Microsoft.OperationalInsights/workspaces@2025-07-01' = {
       name: 'PerGB2018'
     }
     retentionInDays: 30
-  }
-}
-
-// --- Monitoring Reader role for AI agent service principal ---
-// Grants read access to Log Analytics so that AI agents can query application logs and metrics.
-resource agentMonitoringReaderRole 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (!empty(agentPrincipalId)) {
-  name: guid(logAnalytics.id, agentPrincipalId, 'Monitoring Reader')
-  scope: logAnalytics
-  properties: {
-    // Monitoring Reader built-in role
-    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '43d0d8ad-25c7-4714-9337-8ba259a9fe05')
-    principalId: agentPrincipalId
-    principalType: 'ServicePrincipal'
   }
 }
 
@@ -244,3 +228,4 @@ output webAppUrl string = 'https://${webApp.properties.defaultHostName}'
 output sqlServerFqdn string = sqlServer.properties.fullyQualifiedDomainName
 output resourceGroupName string = resourceGroup().name
 output logAnalyticsWorkspaceId string = logAnalytics.properties.customerId
+output logAnalyticsWorkspaceName string = logAnalytics.name
