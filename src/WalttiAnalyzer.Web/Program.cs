@@ -107,7 +107,7 @@ app.MapGet("/api/status", async (DatabaseService db, IOptions<WalttiSettings> op
     var s = opts.Value;
     var daily = await db.GetLatestCollectionAsync(s.FeedId, "daily");
     var realtime = await db.GetLatestCollectionAsync(s.FeedId, "realtime");
-    return Results.Ok(new { feed_id = s.FeedId, last_daily = daily, last_realtime = realtime });
+    return Results.Ok(new { feed_id = s.FeedId, default_stop_id = s.DefaultStopId, last_daily = daily, last_realtime = realtime });
 });
 
 app.MapGet("/api/stops", async (DatabaseService db, IOptions<WalttiSettings> opts) =>
