@@ -122,8 +122,11 @@ public class AnalyzerTests : IDisposable
 
         // A past departure (1 hour ago), clamped to at least 3600 to avoid midnight issues
         var pastSecs = Math.Max(3600, nowSecs - 3600);
-        // A future departure (1 hour from now), clamped to at most 82800 (23:00)
+        // A future departure (1 hour from now), clamped to at most 82800 (23:00).
+        // After 23:00 Helsinki we can't place a future departure within today, so skip.
         var futureSecs = Math.Min(82800, nowSecs + 3600);
+        if (futureSecs <= nowSecs)
+            return; // After 23:00 Helsinki: can't place a valid future departure within today
 
         await _fixture.Db.UpsertTripsBatchAsync([
             new Dictionary<string, object?> { ["gtfs_id"] = "Vaasa:past_trip", ["route_short_name"] = "3",
