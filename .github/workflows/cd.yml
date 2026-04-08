@@ -26,15 +26,10 @@ jobs:
     runs-on: ubuntu-latest
     if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
     outputs:
-      webAppName: ${{ steps.set-outputs.outputs.webAppName }}
+      webAppName: ${{ steps.deploy-bicep.outputs.webAppName }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v5
-
-      - name: Set resource outputs
-        id: set-outputs
-        run: |
-          echo "webAppName=${{ env.AZURE_PROJECT_NAME }}-${{ env.AZURE_ENV }}-app" >> $GITHUB_OUTPUT
 
       - name: Azure Login
         uses: azure/login@v3
@@ -51,19 +46,22 @@ jobs:
             2>/dev/null || true
 
       - name: Deploy Bicep
+        id: deploy-bicep
         env:
           SQL_ADMIN_PASSWORD: ${{ secrets.SQL_ADMIN_PASSWORD }}
           DIGITRANSIT_API_KEY: ${{ secrets.DIGITRANSIT_API_KEY }}
           NOTIFICATION_EMAIL: ${{ secrets.NOTIFICATION_EMAIL }}
         run: |
-          az deployment group create \
+          DEPLOYMENT=$(az deployment group create \
             --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
             --template-file infra/main.bicep \
             --parameters projectName=${{ env.AZURE_PROJECT_NAME }} \
             --parameters env=${{ env.AZURE_ENV }} \
             --parameters "digitransitApiKey=$DIGITRANSIT_API_KEY" \
             --parameters "sqlAdminPassword=$SQL_ADMIN_PASSWORD" \
-            --parameters "notificationEmail=$NOTIFICATION_EMAIL"
+            --parameters "notificationEmail=$NOTIFICATION_EMAIL" \
+            --output json)
+          echo "webAppName=$(echo $DEPLOYMENT | jq -r '.properties.outputs.webAppName.value')" >> $GITHUB_OUTPUT
 
   deploy-api:
     needs: deploy-infra
@@ -106,7 +104,8 @@ jobs:
 
       - name: Deploy Web App
         run: |
-          az webapp deployment source config-zip \
+          az webapp deploy \
             --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
             --name ${{ needs.deploy-infra.outputs.webAppName }} \
-            --src app-deploy.zip
+            --src-path app-deploy.zip \
+            --type zip
