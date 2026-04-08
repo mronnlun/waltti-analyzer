@@ -81,7 +81,6 @@ function isDeparturePast(o) {
 let currentPage = "dashboard";
 let hourlyChart = null;
 let stopSelect = null;
-let routeSelect = null;
 
 const VALID_PAGES = ["dashboard", "observations", "stops"];
 
@@ -141,10 +140,6 @@ async function renderDashboard(container) {
     stopSelect.destroy();
     stopSelect = null;
   }
-  if (routeSelect) {
-    routeSelect.destroy();
-    routeSelect = null;
-  }
 
   container.innerHTML = `
     <h1>Dashboard</h1>
@@ -177,11 +172,7 @@ async function renderDashboard(container) {
     <div id="dash-results"></div>
   `;
 
-  routeSelect = new TomSelect("#route-select", {
-    allowEmptyOption: true,
-  });
-
-  // Load stops and settings in parallel
+  // Load stops
   try {
     const [stops, status] = await Promise.all([
       fetchJSON("stops"),
@@ -222,7 +213,7 @@ async function loadDashboardData() {
   const stopId = document.getElementById("stop-select").value;
   const from = document.getElementById("from-date").value;
   const to = document.getElementById("to-date").value;
-  const route = routeSelect ? routeSelect.getValue() : "";
+  const route = document.getElementById("route-select")?.value || "";
   const timeFrom = document.getElementById("time-from").value;
   const timeTo = document.getElementById("time-to").value;
 
@@ -248,14 +239,13 @@ async function loadDashboardData() {
     ]);
 
     // Update route selector
-    if (routeSelect) {
-      const currentRoute = routeSelect.getValue();
-      routeSelect.clearOptions();
-      routeSelect.addOptions([
-        { value: "", text: "All routes" },
-        ...stopRoutes.map((r) => ({ value: r, text: r })),
-      ]);
-      routeSelect.setValue(stopRoutes.includes(currentRoute) ? currentRoute : "", true);
+    const routeEl = document.getElementById("route-select");
+    if (routeEl) {
+      const currentRoute = routeEl.value;
+      routeEl.innerHTML =
+        '<option value="">All routes</option>' +
+        stopRoutes.map((r) => `<option value="${escapeHtml(r)}">${escapeHtml(r)}</option>`).join("");
+      routeEl.value = stopRoutes.includes(currentRoute) ? currentRoute : "";
     }
 
     document.getElementById("action-status").textContent = "";

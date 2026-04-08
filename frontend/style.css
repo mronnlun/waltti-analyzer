@@ -104,6 +104,17 @@ h2 {
     flex: 1;
 }
 
+.filter-row-route select {
+    padding: 0.4rem 0.5rem;
+    border: 1px solid #d0d0d0;
+    border-radius: 4px;
+    background: white;
+    font-size: 0.9rem;
+    color: #303030;
+    min-height: 2.4rem;
+    cursor: pointer;
+}
+
 .filter-row-options {
     display: flex;
     flex-wrap: wrap;
@@ -292,5 +303,17 @@ button:hover {
     }
     .cards {
         grid-template-columns: 1fr 1fr;
+    }
+    .filter-row-stop,
+    .filter-row-route {
+        flex-direction: column;
+        align-items: stretch;
+    }
+    .filter-row-stop label,
+    .filter-row-route label {
+        margin-bottom: 0.2rem;
+    }
+    .filter-row-route select {
+        width: 100%;
     }
 }
