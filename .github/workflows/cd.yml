@@ -69,7 +69,7 @@ jobs:
     steps:
       - name: Download build artifact from CI
         if: ${{ github.event_name == 'workflow_run' }}
-        uses: actions/download-artifact@v6
+        uses: actions/download-artifact@v4
         with:
           name: web-app
           path: ./publish
