@@ -13,8 +13,13 @@ jobs:
   copilot-setup-steps:
     runs-on: ubuntu-latest
 
+    env:
+      AZURE_RESOURCE_GROUP: WalttiAnalyzer-prod-rg
+      LOG_ANALYTICS_WORKSPACE_NAME: WalttiAnalyzer-prod-log
+
     permissions:
       contents: read
+      id-token: write  # Required for OIDC authentication to Azure
 
     steps:
       - name: Checkout code
@@ -27,3 +32,19 @@ jobs:
 
       - name: Restore NuGet packages
         run: dotnet restore src/WalttiAnalyzer.Web/WalttiAnalyzer.Web.csproj
+
+      - name: Azure Login
+        uses: azure/login@v3
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Set Azure Monitor environment variables
+        run: |
+          WORKSPACE_ID=$(az monitor log-analytics workspace show \
+            --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
+            --workspace-name ${{ env.LOG_ANALYTICS_WORKSPACE_NAME }} \
+            --query customerId \
+            --output tsv)
+          echo "LOG_ANALYTICS_WORKSPACE_ID=$WORKSPACE_ID" >> $GITHUB_ENV
