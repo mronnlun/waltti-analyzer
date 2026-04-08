@@ -113,8 +113,11 @@ resource appInsights 'Microsoft.Insights/components@2020-02-02' = {
   }
 }
 
-// ADO.NET connection string for EF Core SQL Server provider
-var sqlConnectionString = 'Server=tcp:${sqlServer.properties.fullyQualifiedDomainName},1433;Database=${sqlDatabase.name};User Id=${sqlAdminLogin};Password=${sqlAdminPassword};Encrypt=yes;TrustServerCertificate=no;Connection Timeout=30;'
+// ADO.NET connection string for EF Core SQL Server provider.
+// The password is wrapped in single quotes and any embedded single quotes are doubled so that
+// special characters (;, &, <, \, etc.) in the password do not break the ADO.NET parser.
+var escapedPassword = replace(sqlAdminPassword, '\'', '\'\'')
+var sqlConnectionString = 'Server=tcp:${sqlServer.properties.fullyQualifiedDomainName},1433;Database=${sqlDatabase.name};User Id=${sqlAdminLogin};Password=\'${escapedPassword}\';Encrypt=yes;TrustServerCertificate=no;Connection Timeout=30;'
 
 // --- ASP.NET Core Web App ---
 resource webApp 'Microsoft.Web/sites@2025-03-01' = {
