@@ -48,6 +48,32 @@ function daysAgo(n) {
 
 const OUTLIER_THRESHOLD = 1800;
 
+function isDeparturePast(o) {
+  const now = new Date();
+  const todayHelsinki = now.toLocaleDateString("sv", { timeZone: "Europe/Helsinki" });
+
+  if (o.service_date < todayHelsinki) return true;
+  if (o.service_date > todayHelsinki) return false;
+
+  // Same date as today — compare seconds since midnight in Helsinki time
+  const parts = new Intl.DateTimeFormat("en", {
+    timeZone: "Europe/Helsinki",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  }).formatToParts(now);
+  const nowSecs =
+    parseInt(parts.find((p) => p.type === "hour").value) * 3600 +
+    parseInt(parts.find((p) => p.type === "minute").value) * 60 +
+    parseInt(parts.find((p) => p.type === "second").value);
+
+  const scheduledPast = o.scheduled_departure != null && o.scheduled_departure <= nowSecs;
+  const actualPast =
+    o.realtime && o.realtime_departure != null && o.realtime_departure <= nowSecs;
+  return scheduledPast || actualPast;
+}
+
 // ---------------------------------------------------------------------------
 // Navigation
 // ---------------------------------------------------------------------------
@@ -282,17 +308,18 @@ function renderDashboardResults(summary, routes, hourly, observations) {
     <div class="chart-container"><canvas id="hourly-chart"></canvas></div>
   </div>`;
 
-  // Observations table
-  if (observations.length > 0) {
+  // Observations table — only show departures that have already occurred
+  const pastObservations = observations.filter(isDeparturePast);
+  if (pastObservations.length > 0) {
     html += `<div class="stats-section">
-      <h2>All Departures (${observations.length})</h2>
+      <h2>All Departures (${pastObservations.length})</h2>
       <div class="table-responsive">
       <table class="data-table" style="width:100%">
         <thead><tr>
           <th>Date</th><th>Route</th><th>Headsign</th><th>Scheduled</th>
           <th>Actual</th><th>Deviation</th><th>GPS</th>
         </tr></thead><tbody>`;
-    for (const o of observations) {
+    for (const o of pastObservations) {
       const isSuspect =
         o.departure_delay != null && Math.abs(o.departure_delay) > OUTLIER_THRESHOLD;
       const cls = isSuspect ? ' class="suspect-row"' : "";
