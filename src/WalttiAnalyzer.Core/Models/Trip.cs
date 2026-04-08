@@ -1,4 +1,4 @@
-namespace WalttiAnalyzer.Functions.Models;
+namespace WalttiAnalyzer.Core.Models;
 
 public class Trip
 {

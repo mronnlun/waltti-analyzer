@@ -2,34 +2,20 @@ using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
 
-namespace WalttiAnalyzer.Functions.Services;
+namespace WalttiAnalyzer.Core.Services;
 
 public class DigitransitClient
 {
-    private readonly ILogger<DigitransitClient> _logger;
     private readonly HttpClient _httpClient;
+    private readonly ILogger<DigitransitClient> _logger;
 
     private static readonly TimeZoneInfo HelsinkiTz =
         TimeZoneInfo.FindSystemTimeZoneById("Europe/Helsinki");
 
-    public DigitransitClient(ILogger<DigitransitClient> logger)
+    public DigitransitClient(HttpClient httpClient, ILogger<DigitransitClient> logger)
     {
+        _httpClient = httpClient;
         _logger = logger;
-        _httpClient = new HttpClient();
-    }
-
-    public void Configure(string apiUrl, string apiKey)
-    {
-        try
-        {
-            _httpClient.BaseAddress = new Uri(apiUrl);
-            _httpClient.DefaultRequestHeaders.Remove("digitransit-subscription-key");
-            _httpClient.DefaultRequestHeaders.Add("digitransit-subscription-key", apiKey);
-        }
-        catch(Exception ex)
-        {
-            _logger.LogError(ex, "Error configuring DigitransitClient");
-        }
     }
 
     // -----------------------------------------------------------------------
@@ -208,9 +194,7 @@ public class DigitransitClient
                 var json = await resp.Content.ReadAsStringAsync();
                 var doc = JsonDocument.Parse(json);
                 if (doc.RootElement.TryGetProperty("errors", out var errors))
-                {
                     _logger.LogError("GraphQL errors: {Errors}", errors.GetRawText());
-                }
                 if (doc.RootElement.TryGetProperty("data", out var data))
                     return data;
                 return default;

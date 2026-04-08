@@ -12,10 +12,6 @@ param env string = 'prod'
 @description('Azure region for resources')
 param location string = resourceGroup().location
 
-@description('Azure region for the Static Web App (limited availability)')
-@allowed(['westus2', 'centralus', 'eastus2', 'westeurope', 'eastasia'])
-param staticWebAppLocation string = 'westeurope'
-
 @description('Digitransit API key')
 @secure()
 param digitransitApiKey string
@@ -43,58 +39,18 @@ param notificationEmail string = ''
 
 // SQL Server names must be globally unique and lowercase
 var sqlServerName = toLower('${projectName}-${env}-sql')
-var storageName = toLower(replace('${projectName}${env}st', '-', ''))
 
-// --- Storage Account (required for Function App) ---
-resource storageAccount 'Microsoft.Storage/storageAccounts@2023-05-01' = {
-  name: storageName
-  location: location
-  sku: {
-    name: 'Standard_LRS'
-  }
-  kind: 'StorageV2'
-  properties: {
-    supportsHttpsTrafficOnly: true
-    minimumTlsVersion: 'TLS1_2'
-  }
-}
-
-// --- Blob service and deployment container ---
-resource blobService 'Microsoft.Storage/storageAccounts/blobServices@2023-05-01' = {
-  parent: storageAccount
-  name: 'default'
-}
-
-resource deploymentContainer 'Microsoft.Storage/storageAccounts/blobServices/containers@2023-05-01' = {
-  parent: blobService
-  name: 'app-package-${toLower('${projectName}-${env}-func')}'
-  properties: {
-    publicAccess: 'None'
-  }
-}
-
-// --- Consumption App Service Plan (serverless) ---
-resource functionPlan 'Microsoft.Web/serverfarms@2024-11-01' = {
+// --- App Service Plan (Basic B1 — required for AlwaysOn) ---
+resource appServicePlan 'Microsoft.Web/serverfarms@2024-11-01' = {
   name: '${projectName}-${env}-plan'
   location: location
-  kind: 'functionapp'
+  kind: 'linux'
   sku: {
-    name: 'Y1'
-    tier: 'Dynamic'
-    size: 'Y1'
-    family: 'Y'
-    capacity: 0
+    name: 'B1'
+    tier: 'Basic'
   }
   properties: {
-    perSiteScaling: false
-    elasticScaleEnabled: false
-    maximumElasticWorkerCount: 1
     reserved: true // Required for Linux
-    isXenon: false
-    hyperV: false
-    targetWorkerCount: 0
-    targetWorkerSizeId: 0
-    zoneRedundant: false
   }
 }
 
@@ -182,51 +138,34 @@ resource appInsights 'Microsoft.Insights/components@2020-02-02' = {
   }
 }
 
-// --- Function App (Consumption plan, V2 config model) ---
-var storageConnectionString = 'DefaultEndpointsProtocol=https;AccountName=${storageAccount.name};EndpointSuffix=${az.environment().suffixes.storage};AccountKey=${storageAccount.listKeys().keys[0].value}'
+// ADO.NET connection string for EF Core SQL Server provider
+var sqlConnectionString = 'Server=tcp:${sqlServer.properties.fullyQualifiedDomainName},1433;Database=${sqlDatabase.name};User Id=${sqlAdminLogin};Password=${sqlAdminPassword};Encrypt=yes;TrustServerCertificate=no;Connection Timeout=30;'
 
-resource functionApp 'Microsoft.Web/sites@2024-11-01' = {
-  name: '${projectName}-${env}-func'
+// --- ASP.NET Core Web App ---
+resource webApp 'Microsoft.Web/sites@2024-11-01' = {
+  name: '${projectName}-${env}-app'
   location: location
-  kind: 'functionapp,linux'
+  kind: 'app,linux'
   identity: {
     type: 'SystemAssigned'
   }
   properties: {
-    serverFarmId: functionPlan.id
+    serverFarmId: appServicePlan.id
     reserved: true
     httpsOnly: true
     clientAffinityEnabled: false
     siteConfig: {
-      numberOfWorkers: 1
-      alwaysOn: false
-      http20Enabled: false
-      functionAppScaleLimit: 3
-      minimumElasticInstanceCount: 0
+      linuxFxVersion: 'DOTNETCORE|10.0'
+      alwaysOn: true // Required to keep BackgroundService running
+      http20Enabled: true
       connectionStrings: [
         {
           name: 'DATABASE'
-          connectionString: 'Driver={ODBC Driver 18 for SQL Server};Server=tcp:${sqlServer.properties.fullyQualifiedDomainName},1433;Database=${sqlDatabase.name};Uid=${sqlAdminLogin};Pwd=${sqlAdminPassword};Encrypt=yes;TrustServerCertificate=no;Connection Timeout=30;'
+          connectionString: sqlConnectionString
           type: 'SQLAzure'
         }
       ]
       appSettings: [
-        {
-          name: 'AzureWebJobsStorage'
-          value: storageConnectionString
-        }
-        {
-          name: 'DEPLOYMENT_STORAGE_CONNECTION_STRING'
-          value: storageConnectionString
-        }
-        {
-          name: 'FUNCTIONS_EXTENSION_VERSION'
-          value: '~4'
-        }
-        {
-          name: 'FUNCTIONS_WORKER_RUNTIME'
-          value: 'dotnet-isolated'
-        }
         // Settings bound to WalttiSettings via "Waltti:" config section prefix
         {
           name: 'Waltti__DigitransitApiKey'
@@ -240,55 +179,28 @@ resource functionApp 'Microsoft.Web/sites@2024-11-01' = {
           name: 'APPLICATIONINSIGHTS_CONNECTION_STRING'
           value: appInsights.properties.ConnectionString
         }
+        {
+          name: 'ApplicationInsightsAgent_EXTENSION_VERSION'
+          value: '~3'
+        }
       ]
     }
-    functionAppConfig: {
-      deployment: {
-        storage: {
-          type: 'blobcontainer'
-          value: '${storageAccount.properties.primaryEndpoints.blob}${deploymentContainer.name}'
-          authentication: {
-            type: 'storageaccountconnectionstring'
-            storageAccountConnectionStringName: 'DEPLOYMENT_STORAGE_CONNECTION_STRING'
-          }
-        }
-      }
-      runtime: {
-        name: 'dotnet-isolated'
-        version: '10.0'
-      }
-      scaleAndConcurrency: {
-        maximumInstanceCount: 3
-        instanceMemoryMB: 512
-      }
-    }
   }
 }
 
-// --- Static Web App for SPA frontend ---
-resource staticWebApp 'Microsoft.Web/staticSites@2023-12-01' = {
-  name: '${projectName}-${env}-swa'
-  location: staticWebAppLocation
-  sku: {
-    name: 'Free'
-    tier: 'Free'
-  }
-  properties: {
-    buildProperties: {
-      skipGithubActionWorkflowGeneration: true
-    }
-  }
-}
-
-// --- Diagnostic settings: send Function App console & platform logs to Log Analytics ---
-resource functionAppDiagnostics 'Microsoft.Insights/diagnosticSettings@2021-05-01-preview' = {
-  name: '${projectName}-${env}-func-diag'
-  scope: functionApp
+// --- Diagnostic settings: send Web App logs to Log Analytics ---
+resource webAppDiagnostics 'Microsoft.Insights/diagnosticSettings@2021-05-01-preview' = {
+  name: '${projectName}-${env}-app-diag'
+  scope: webApp
   properties: {
     workspaceId: logAnalytics.id
     logs: [
       {
-        category: 'FunctionAppLogs'
+        category: 'AppServiceHTTPLogs'
+        enabled: true
+      }
+      {
+        category: 'AppServiceConsoleLogs'
         enabled: true
       }
     ]
@@ -333,9 +245,7 @@ resource budget 'Microsoft.Consumption/budgets@2023-11-01' = if (!empty(notifica
 }
 
 // --- Outputs ---
-output functionAppName string = functionApp.name
-output functionAppUrl string = 'https://${functionApp.properties.defaultHostName}'
-output staticWebAppName string = staticWebApp.name
-output staticWebAppUrl string = 'https://${staticWebApp.properties.defaultHostname}'
+output webAppName string = webApp.name
+output webAppUrl string = 'https://${webApp.properties.defaultHostName}'
 output sqlServerFqdn string = sqlServer.properties.fullyQualifiedDomainName
 output resourceGroupName string = resourceGroup().name

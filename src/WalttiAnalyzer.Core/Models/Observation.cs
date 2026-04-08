@@ -1,5 +1,6 @@
-namespace WalttiAnalyzer.Functions.Models;
+namespace WalttiAnalyzer.Core.Models;
 
+/// <summary>Denormalized read model returned by observation queries (joins stops, trips, realtime_states).</summary>
 public class Observation
 {
     public long Id { get; set; }

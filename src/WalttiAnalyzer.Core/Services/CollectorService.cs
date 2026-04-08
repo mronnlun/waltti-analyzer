@@ -1,36 +1,39 @@
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
+using WalttiAnalyzer.Core.Models;
 
-namespace WalttiAnalyzer.Functions.Services;
+namespace WalttiAnalyzer.Core.Services;
 
 public class CollectorService
 {
     private readonly ILogger<CollectorService> _logger;
     private readonly DatabaseService _db;
     private readonly DigitransitClient _client;
+    private readonly WalttiSettings _settings;
 
     private static readonly TimeZoneInfo HelsinkiTz =
         TimeZoneInfo.FindSystemTimeZoneById("Europe/Helsinki");
 
     private const int RealtimeBatchSize = 50;
 
-    public CollectorService(ILogger<CollectorService> logger, DatabaseService db, DigitransitClient client)
+    public CollectorService(ILogger<CollectorService> logger, DatabaseService db,
+        DigitransitClient client, IOptions<WalttiSettings> settings)
     {
         _logger = logger;
         _db = db;
         _client = client;
+        _settings = settings.Value;
     }
 
-    public async Task<Dictionary<string, object?>> DiscoverStopsAsync(
-        string dbPath, string apiUrl, string apiKey, string feedId)
+    public async Task<Dictionary<string, object?>> DiscoverStopsAsync()
     {
-        _client.Configure(apiUrl, apiKey);
-        using var conn = _db.Connect(dbPath);
+        var feedId = _settings.FeedId;
         try
         {
             var (stops, routes) = await _client.DiscoverFeedStopsAsync(feedId);
-            _db.UpsertStopsBatch(conn, stops);
-            _db.LogCollection(conn, feedId, "discover", departuresFound: stops.Count);
+            await _db.UpsertStopsBatchAsync(stops);
+            await _db.LogCollectionAsync(feedId, "discover", departuresFound: stops.Count);
             _logger.LogInformation("Discovered {Stops} stops and {Routes} routes for feed {Feed}",
                 stops.Count, routes.Count, feedId);
             return new Dictionary<string, object?>
@@ -41,19 +44,16 @@ public class CollectorService
         catch (Exception ex)
         {
             _logger.LogError(ex, "Stop discovery failed for feed {Feed}", feedId);
-            _db.LogCollection(conn, feedId, "discover", error: ex.Message);
+            await _db.LogCollectionAsync(feedId, "discover", error: ex.Message);
             return new Dictionary<string, object?> { ["status"] = "error", ["message"] = ex.Message };
         }
     }
 
     public async Task<Dictionary<string, object?>> CollectDailyAsync(
-        string dbPath, string apiUrl, string apiKey,
-        string? stopId = null, string? serviceDate = null, string? feedId = null)
+        string? stopId = null, string? serviceDate = null)
     {
-        _client.Configure(apiUrl, apiKey);
-        using var conn = _db.Connect(dbPath);
+        var feedId = _settings.FeedId;
         var now = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
-
         var targetDate = serviceDate
             ?? TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, HelsinkiTz).ToString("yyyy-MM-dd");
 
@@ -66,12 +66,11 @@ public class CollectorService
             }
             else
             {
-                queryIds = _db.GetAllStopIds(conn, feedId);
+                queryIds = await _db.GetAllStopIdsAsync(feedId);
                 if (queryIds.Count == 0)
                 {
-                    await DiscoverStopsAsync(dbPath, apiUrl, apiKey, feedId ?? "Vaasa");
-                    using var conn2 = _db.Connect(dbPath);
-                    queryIds = _db.GetAllStopIds(conn2, feedId);
+                    await DiscoverStopsAsync();
+                    queryIds = await _db.GetAllStopIdsAsync(feedId);
                 }
             }
 
@@ -89,7 +88,7 @@ public class CollectorService
                 double? lat = stopData.TryGetProperty("lat", out var la) && la.ValueKind != JsonValueKind.Null ? la.GetDouble() : null;
                 double? lon = stopData.TryGetProperty("lon", out var lo) && lo.ValueKind != JsonValueKind.Null ? lo.GetDouble() : null;
 
-                _db.UpsertStop(conn, gtfsId, name, code, lat, lon);
+                await _db.UpsertStopAsync(gtfsId, name, code, lat, lon);
 
                 var (trips, observations) = ProcessDailyStop(stopData, targetDate, now);
                 foreach (var kv in trips) allTrips[kv.Key] = kv.Value;
@@ -97,10 +96,10 @@ public class CollectorService
                 if (observations.Count > 0) stopsWithService++;
             }
 
-            if (allTrips.Count > 0) _db.UpsertTripsBatch(conn, allTrips.Values.ToList());
-            if (allObservations.Count > 0) _db.UpsertObservationsBatch(conn, allObservations);
+            if (allTrips.Count > 0) await _db.UpsertTripsBatchAsync(allTrips.Values.ToList());
+            if (allObservations.Count > 0) await _db.UpsertObservationsBatchAsync(allObservations);
 
-            _db.LogCollection(conn, stopId ?? feedId ?? "all", "daily", targetDate, allObservations.Count);
+            await _db.LogCollectionAsync(stopId ?? feedId, "daily", targetDate, allObservations.Count);
             _logger.LogInformation(
                 "Daily collection: {Deps} departures across {With}/{Total} stops for {Date}",
                 allObservations.Count, stopsWithService, stopsData.Count, targetDate);
@@ -123,17 +122,14 @@ public class CollectorService
         catch (Exception ex)
         {
             _logger.LogError(ex, "Daily collection failed for {Date}", targetDate);
-            _db.LogCollection(conn, stopId ?? feedId ?? "all", "daily", targetDate, error: ex.Message);
+            await _db.LogCollectionAsync(stopId ?? feedId, "daily", targetDate, error: ex.Message);
             return new Dictionary<string, object?> { ["status"] = "error", ["message"] = ex.Message };
         }
     }
 
-    public async Task<Dictionary<string, object?>> PollRealtimeOnceAsync(
-        string dbPath, string apiUrl, string apiKey,
-        string? stopId = null, string? feedId = null)
+    public async Task<Dictionary<string, object?>> PollRealtimeOnceAsync(string? stopId = null)
     {
-        _client.Configure(apiUrl, apiKey);
-        using var conn = _db.Connect(dbPath);
+        var feedId = _settings.FeedId;
         var now = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
 
         try
@@ -145,7 +141,7 @@ public class CollectorService
             }
             else
             {
-                queryIds = _db.GetAllStopIds(conn, feedId);
+                queryIds = await _db.GetAllStopIdsAsync(feedId);
                 if (queryIds.Count == 0)
                     return new Dictionary<string, object?>
                     {
@@ -164,14 +160,14 @@ public class CollectorService
 
                 var (trips, observations, stopsWithData) = ProcessRealtimeBatch(stopsData, now);
 
-                if (trips.Count > 0) _db.UpsertTripsBatch(conn, trips.Values.ToList());
-                if (observations.Count > 0) _db.UpsertObservationsBatch(conn, observations);
+                if (trips.Count > 0) await _db.UpsertTripsBatchAsync(trips.Values.ToList());
+                if (observations.Count > 0) await _db.UpsertObservationsBatchAsync(observations);
 
                 totalUpdated += observations.Count;
                 totalStopsWithData += stopsWithData;
             }
 
-            _db.LogCollection(conn, stopId ?? feedId ?? "all", "realtime", departuresFound: totalUpdated);
+            await _db.LogCollectionAsync(stopId ?? feedId, "realtime", departuresFound: totalUpdated);
             _logger.LogInformation(
                 "Realtime poll: {Deps} departures across {With}/{Total} stops",
                 totalUpdated, totalStopsWithData, totalStopsPolled);
@@ -186,7 +182,7 @@ public class CollectorService
         catch (Exception ex)
         {
             _logger.LogError(ex, "Realtime poll failed");
-            _db.LogCollection(conn, stopId ?? feedId ?? "all", "realtime", error: ex.Message);
+            await _db.LogCollectionAsync(stopId ?? feedId, "realtime", error: ex.Message);
             return new Dictionary<string, object?> { ["status"] = "error", ["message"] = ex.Message };
         }
     }
@@ -292,7 +288,7 @@ public class CollectorService
                     ["realtime_departure"] = GetIntOrNull(st, "realtimeDeparture"),
                     ["arrival_delay"] = GetIntOrDefault(st, "arrivalDelay", 0),
                     ["departure_delay"] = GetIntOrDefault(st, "departureDelay", 0),
-                    ["realtime"] = st.TryGetProperty("realtime", out var rt) && rt.GetBoolean() ? 1 : 0,
+                    ["realtime"] = st.TryGetProperty("realtime", out var rtVal) && rtVal.GetBoolean() ? 1 : 0,
                     ["realtime_state"] = GetStringOrNull(st, "realtimeState"),
                     ["queried_at"] = now,
                 });

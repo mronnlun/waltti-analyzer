@@ -15,16 +15,16 @@ jobs:
         with:
           dotnet-version: "10.0.x"
 
-      - name: Build Function App
-        run: dotnet build api/WalttiAnalyzer.Functions/WalttiAnalyzer.Functions.csproj
+      - name: Build Web App
+        run: dotnet build src/WalttiAnalyzer.Web/WalttiAnalyzer.Web.csproj
 
       - name: Run tests
         run: dotnet test tests/WalttiAnalyzer.Tests/WalttiAnalyzer.Tests.csproj --verbosity normal
 
-      - name: Publish Function App
+      - name: Publish Web App
         if: github.ref == 'refs/heads/main' && github.event_name == 'push'
         run: |
-          dotnet publish api/WalttiAnalyzer.Functions/WalttiAnalyzer.Functions.csproj \
+          dotnet publish src/WalttiAnalyzer.Web/WalttiAnalyzer.Web.csproj \
             --configuration Release \
             --output ./publish
 
@@ -32,6 +32,6 @@ jobs:
         if: github.ref == 'refs/heads/main' && github.event_name == 'push'
         uses: actions/upload-artifact@v4
         with:
-          name: function-app
+          name: web-app
           path: ./publish
           include-hidden-files: true

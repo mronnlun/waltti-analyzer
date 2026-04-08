@@ -9,13 +9,13 @@
 
 ## Current Direction
 
-- The backend runs on Azure Functions (consumption plan, C#/.NET 8 isolated worker) with a timer-triggered sync function and HTTP-triggered API functions.
-- The frontend is a static SPA (vanilla JS, no build step) deployed to Azure Static Web Apps.
+- The backend runs on **ASP.NET Core** with a periodic `BackgroundService` for data sync and minimal API endpoints for the REST API.
+- The frontend is a static SPA (vanilla JS, no build step) **served directly by the ASP.NET Core app** from `wwwroot/` (the `frontend/` directory is included at build time).
 - Treat the app as a network-wide collector for the Vaasa feed, not only as a single-stop demo.
 - Discover all stops for the configured `FEED_ID`.
 - Seed daily scheduled stop-times before service starts.
 - Poll realtime during service hours and upgrade scheduled rows into observed rows.
-- Treat each `observations` row as the best known result for one `(stop_gtfs_id, trip_gtfs_id, service_date)` combination.
+- Treat each `observations` row as the best known result for one `(stop_id, trip_id, service_date)` combination.
 - Distinguish clearly between scheduled-only rows and rows backed by realtime observations when reporting punctuality.
 
 ## Documentation Maintenance Rules
@@ -34,5 +34,6 @@
 
 ## Known Drift To Watch For
 
-- The database backend differs by environment: SQLite (`sqlite3`) locally and Azure SQL (ODBC) in production. Do not assume SQLite-only when working on deployment or database connection code.
-- The SQLite schema includes `realtime_states`; schema descriptions should list all five tables (stops, trips, realtime_states, observations, collection_log).
+- The database backend differs by environment: SQLite (via EF Core) locally and Azure SQL (via EF Core SQL Server provider) in production. Do not assume SQLite-only when working on deployment or database connection code.
+- The schema includes `realtime_states`; schema descriptions should list all five tables (stops, trips, realtime_states, observations, collection_log).
+- Upserts use `ON CONFLICT` syntax for SQLite and `MERGE` syntax for SQL Server. Provider is detected via `_context.Database.ProviderName`.
