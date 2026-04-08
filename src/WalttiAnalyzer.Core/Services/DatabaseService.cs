@@ -14,6 +14,9 @@ public class DatabaseService
 
     private bool IsSqlite => _context.Database.ProviderName?.Contains("Sqlite") ?? false;
 
+    private static readonly TimeZoneInfo HelsinkiTz =
+        TimeZoneInfo.FindSystemTimeZoneById("Europe/Helsinki");
+
     public DatabaseService(WalttiDbContext context, ILogger<DatabaseService> logger)
     {
         _context = context;
@@ -187,12 +190,12 @@ public class DatabaseService
                     ON CONFLICT(stop_id, trip_id, service_date) DO UPDATE SET
                         scheduled_arrival=excluded.scheduled_arrival,
                         scheduled_departure=excluded.scheduled_departure,
-                        realtime_arrival=excluded.realtime_arrival,
-                        realtime_departure=excluded.realtime_departure,
-                        arrival_delay=excluded.arrival_delay,
-                        departure_delay=excluded.departure_delay,
-                        realtime=excluded.realtime,
-                        realtime_state_id=excluded.realtime_state_id,
+                        realtime_arrival=CASE WHEN excluded.realtime=1 THEN excluded.realtime_arrival ELSE realtime_arrival END,
+                        realtime_departure=CASE WHEN excluded.realtime=1 THEN excluded.realtime_departure ELSE realtime_departure END,
+                        arrival_delay=CASE WHEN excluded.realtime=1 THEN excluded.arrival_delay ELSE arrival_delay END,
+                        departure_delay=CASE WHEN excluded.realtime=1 THEN excluded.departure_delay ELSE departure_delay END,
+                        realtime=CASE WHEN excluded.realtime=1 THEN excluded.realtime ELSE realtime END,
+                        realtime_state_id=CASE WHEN excluded.realtime=1 THEN excluded.realtime_state_id ELSE realtime_state_id END,
                         queried_at=excluded.queried_at");
             }
             else
@@ -207,9 +210,13 @@ public class DatabaseService
                     ON t.stop_id=s.stop_id AND t.trip_id=s.trip_id AND t.service_date=s.service_date
                     WHEN MATCHED THEN UPDATE SET
                         scheduled_arrival=s.scheduled_arrival, scheduled_departure=s.scheduled_departure,
-                        realtime_arrival=s.realtime_arrival, realtime_departure=s.realtime_departure,
-                        arrival_delay=s.arrival_delay, departure_delay=s.departure_delay,
-                        realtime=s.realtime, realtime_state_id=s.realtime_state_id, queried_at=s.queried_at
+                        realtime_arrival=CASE WHEN s.realtime=1 THEN s.realtime_arrival ELSE t.realtime_arrival END,
+                        realtime_departure=CASE WHEN s.realtime=1 THEN s.realtime_departure ELSE t.realtime_departure END,
+                        arrival_delay=CASE WHEN s.realtime=1 THEN s.arrival_delay ELSE t.arrival_delay END,
+                        departure_delay=CASE WHEN s.realtime=1 THEN s.departure_delay ELSE t.departure_delay END,
+                        realtime=CASE WHEN s.realtime=1 THEN s.realtime ELSE t.realtime END,
+                        realtime_state_id=CASE WHEN s.realtime=1 THEN s.realtime_state_id ELSE t.realtime_state_id END,
+                        queried_at=s.queried_at
                     WHEN NOT MATCHED THEN INSERT (stop_id, trip_id, service_date, scheduled_arrival,
                         scheduled_departure, realtime_arrival, realtime_departure, arrival_delay,
                         departure_delay, realtime, realtime_state_id, queried_at)
@@ -230,6 +237,7 @@ public class DatabaseService
         };
         var sql = $"SELECT {ObsColumns} {ObsJoins} WHERE s.gtfs_id=@sid AND o.service_date>=@start AND o.service_date<=@end";
         AppendFilters(ref sql, parms, route, timeFrom, timeTo);
+        AppendPastOnlyFilter(ref sql, parms);
         sql += " ORDER BY o.service_date DESC, o.scheduled_departure DESC";
         return await ReadObservationsRawAsync(sql, parms, includeStopName: false);
     }
@@ -294,6 +302,16 @@ public class DatabaseService
         if (!string.IsNullOrEmpty(route)) { sql += " AND t.route_short_name=@route"; parms.Add(("@route", route)); }
         if (timeFrom.HasValue) { sql += " AND o.scheduled_departure>=@tf"; parms.Add(("@tf", timeFrom.Value)); }
         if (timeTo.HasValue) { sql += " AND o.scheduled_departure<=@tt"; parms.Add(("@tt", timeTo.Value)); }
+    }
+
+    private static void AppendPastOnlyFilter(ref string sql, List<(string Name, object? Value)> parms)
+    {
+        var helsinkiNow = TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, HelsinkiTz);
+        var today = helsinkiNow.ToString("yyyy-MM-dd");
+        var nowSecs = (int)helsinkiNow.TimeOfDay.TotalSeconds;
+        sql += " AND (o.service_date < @today OR o.scheduled_departure <= @now_secs)";
+        parms.Add(("@today", today));
+        parms.Add(("@now_secs", nowSecs));
     }
 
     private static int? GetNullableInt(Dictionary<string, object?> dict, string key)

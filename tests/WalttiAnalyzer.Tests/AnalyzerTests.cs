@@ -113,6 +113,50 @@ public class AnalyzerTests : IDisposable
     }
 
     [Fact]
+    public async Task SummaryExcludesFutureDeparturesOfToday()
+    {
+        var tz = TimeZoneInfo.FindSystemTimeZoneById("Europe/Helsinki");
+        var helsinkiNow = TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, tz);
+        var today = helsinkiNow.ToString("yyyy-MM-dd");
+        var nowSecs = (int)helsinkiNow.TimeOfDay.TotalSeconds;
+
+        // A past departure (1 hour ago), clamped to at least 3600 to avoid midnight issues
+        var pastSecs = Math.Max(3600, nowSecs - 3600);
+        // A future departure (1 hour from now), clamped to at most 82800 (23:00)
+        var futureSecs = Math.Min(82800, nowSecs + 3600);
+
+        await _fixture.Db.UpsertTripsBatchAsync([
+            new Dictionary<string, object?> { ["gtfs_id"] = "Vaasa:past_trip", ["route_short_name"] = "3",
+                ["route_long_name"] = "R", ["mode"] = "BUS", ["headsign"] = "H", ["direction_id"] = 0 },
+            new Dictionary<string, object?> { ["gtfs_id"] = "Vaasa:future_trip", ["route_short_name"] = "3",
+                ["route_long_name"] = "R", ["mode"] = "BUS", ["headsign"] = "H", ["direction_id"] = 0 },
+        ]);
+        await _fixture.Db.UpsertObservationsBatchAsync([
+            new Dictionary<string, object?> {
+                ["stop_gtfs_id"] = "Vaasa:309392", ["trip_gtfs_id"] = "Vaasa:past_trip",
+                ["service_date"] = today, ["scheduled_arrival"] = pastSecs - 100,
+                ["scheduled_departure"] = pastSecs, ["realtime_arrival"] = pastSecs - 100,
+                ["realtime_departure"] = pastSecs + 60, ["arrival_delay"] = 0, ["departure_delay"] = 60,
+                ["realtime"] = 1, ["realtime_state"] = "UPDATED",
+                ["queried_at"] = DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
+            },
+            new Dictionary<string, object?> {
+                ["stop_gtfs_id"] = "Vaasa:309392", ["trip_gtfs_id"] = "Vaasa:future_trip",
+                ["service_date"] = today, ["scheduled_arrival"] = futureSecs - 100,
+                ["scheduled_departure"] = futureSecs, ["realtime_arrival"] = futureSecs - 70,
+                ["realtime_departure"] = futureSecs + 30, ["arrival_delay"] = 30, ["departure_delay"] = 30,
+                ["realtime"] = 1, ["realtime_state"] = "UPDATED",
+                ["queried_at"] = DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
+            },
+        ]);
+
+        var summary = await _analyzer.GetSummaryAsync("Vaasa:309392", today, today);
+        // Only the past departure should be counted
+        Assert.Equal(1, summary["total_departures"]);
+        Assert.Equal(1, summary["with_realtime"]);
+    }
+
+    [Fact]
     public void ParseTime()
     {
         Assert.Equal(16 * 3600 + 5 * 60, AnalyzerService.ParseTime("16:05"));
