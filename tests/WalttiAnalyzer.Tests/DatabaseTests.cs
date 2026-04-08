@@ -59,6 +59,37 @@ public class DatabaseTests : IDisposable
     }
 
     [Fact]
+    public async Task UpsertObservationPreservesRealtimeWhenOverwrittenWithStatic()
+    {
+        await EnsureTripAsync("Vaasa:trip1");
+
+        // First upsert: static schedule only
+        var obs = MakeObs("Vaasa:trip1");
+        await _fixture.Db.UpsertObservationsBatchAsync([obs]);
+
+        // Second upsert: realtime data captured
+        obs["realtime"] = 1;
+        obs["departure_delay"] = 90;
+        obs["realtime_departure"] = 24190;
+        obs["realtime_state"] = "UPDATED";
+        await _fixture.Db.UpsertObservationsBatchAsync([obs]);
+
+        // Third upsert: daily collection re-runs and API returns realtime=false for past departure
+        obs["realtime"] = 0;
+        obs["departure_delay"] = 0;
+        obs["realtime_departure"] = null;
+        obs["realtime_state"] = "SCHEDULED";
+        await _fixture.Db.UpsertObservationsBatchAsync([obs]);
+
+        // Realtime data captured in second upsert should be preserved
+        var rows = await _fixture.Db.GetObservationsAsync("Vaasa:309392", "2026-04-02", "2026-04-02");
+        Assert.Single(rows);
+        Assert.Equal(1, rows[0].Realtime);
+        Assert.Equal(90, rows[0].DepartureDelay);
+        Assert.Equal(24190, rows[0].RealtimeDeparture);
+    }
+
+    [Fact]
     public async Task BatchUpsert()
     {
         var trips = Enumerable.Range(0, 5).Select(i => new Dictionary<string, object?>

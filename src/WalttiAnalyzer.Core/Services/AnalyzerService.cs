@@ -15,6 +15,9 @@ public class AnalyzerService
 
     private bool IsSqlite => _context.Database.ProviderName?.Contains("Sqlite") ?? false;
 
+    private static readonly TimeZoneInfo HelsinkiTz =
+        TimeZoneInfo.FindSystemTimeZoneById("Europe/Helsinki");
+
     public AnalyzerService(WalttiDbContext context, ILogger<AnalyzerService> logger)
     {
         _context = context;
@@ -53,6 +56,7 @@ public class AnalyzerService
                     WHERE s.gtfs_id=@sid AND o.service_date>=@start AND o.service_date<=@end";
         var parms = new List<(string, object?)> { ("@sid", stopId), ("@start", startDate), ("@end", endDate) };
         AppendFilters(ref sql, parms, route, timeFrom, timeTo);
+        AppendPastOnlyFilter(ref sql, parms);
 
         var rows = await QueryRawAsync(sql, parms, r => (
             delay: r.IsDBNull(0) ? (int?)null : r.GetInt32(0),
@@ -123,6 +127,7 @@ public class AnalyzerService
                     WHERE s.gtfs_id=@sid AND o.service_date>=@start AND o.service_date<=@end";
         var parms = new List<(string, object?)> { ("@sid", stopId), ("@start", startDate), ("@end", endDate) };
         AppendFilters(ref sql, parms, route, timeFrom, timeTo);
+        AppendPastOnlyFilter(ref sql, parms);
 
         var raw = await QueryRawAsync(sql, parms, r => (
             routeName: r.IsDBNull(0) ? "" : r.GetString(0),
@@ -173,6 +178,7 @@ public class AnalyzerService
                     WHERE s.gtfs_id=@sid AND o.service_date>=@start AND o.service_date<=@end";
         var parms = new List<(string, object?)> { ("@sid", stopId), ("@start", startDate), ("@end", endDate) };
         AppendFilters(ref sql, parms, route, timeFrom, timeTo);
+        AppendPastOnlyFilter(ref sql, parms);
 
         var raw = await QueryRawAsync(sql, parms, r => (
             hour: r.GetInt32(0),
@@ -212,6 +218,16 @@ public class AnalyzerService
         if (!string.IsNullOrEmpty(route)) { sql += " AND t.route_short_name=@route"; parms.Add(("@route", route)); }
         if (timeFrom.HasValue) { sql += " AND o.scheduled_departure>=@tf"; parms.Add(("@tf", timeFrom.Value)); }
         if (timeTo.HasValue) { sql += " AND o.scheduled_departure<=@tt"; parms.Add(("@tt", timeTo.Value)); }
+    }
+
+    private static void AppendPastOnlyFilter(ref string sql, List<(string Name, object? Value)> parms)
+    {
+        var helsinkiNow = TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, HelsinkiTz);
+        var today = helsinkiNow.ToString("yyyy-MM-dd");
+        var nowSecs = (int)helsinkiNow.TimeOfDay.TotalSeconds;
+        sql += " AND (o.service_date < @today OR o.scheduled_departure <= @now_secs)";
+        parms.Add(("@today", today));
+        parms.Add(("@now_secs", nowSecs));
     }
 
     private async Task<List<T>> QueryRawAsync<T>(string sql,
