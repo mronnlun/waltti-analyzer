@@ -129,9 +129,12 @@ async function renderDashboard(container) {
     <div id="dash-results"></div>
   `;
 
-  // Load stops
+  // Load stops and settings in parallel
   try {
-    const stops = await fetchJSON("stops");
+    const [stops, status] = await Promise.all([
+      fetchJSON("stops"),
+      fetchJSON("status"),
+    ]);
     const sel = document.getElementById("stop-select");
     sel.innerHTML = stops
       .map(
@@ -144,6 +147,10 @@ async function renderDashboard(container) {
       placeholder: "Select a stop…",
       allowEmptyOption: false,
     });
+
+    if (status.default_stop_id) {
+      stopSelect.setValue(status.default_stop_id);
+    }
   } catch {
     document.getElementById("stop-select").innerHTML =
       '<option value="">Failed to load stops</option>';
