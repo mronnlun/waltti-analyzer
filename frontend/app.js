@@ -81,6 +81,7 @@ function isDeparturePast(o) {
 let currentPage = "dashboard";
 let hourlyChart = null;
 let stopSelect = null;
+let routeSelect = null;
 
 const VALID_PAGES = ["dashboard", "observations", "stops"];
 
@@ -140,6 +141,10 @@ async function renderDashboard(container) {
     stopSelect.destroy();
     stopSelect = null;
   }
+  if (routeSelect) {
+    routeSelect.destroy();
+    routeSelect = null;
+  }
 
   container.innerHTML = `
     <h1>Dashboard</h1>
@@ -153,7 +158,10 @@ async function renderDashboard(container) {
         <div class="filter-row-options">
           <label>From <input type="date" id="from-date" value="${daysAgo(5)}"></label>
           <label>To <input type="date" id="to-date" value="${todayStr()}"></label>
-          <label>Route <select id="route-select"><option value="">All</option></select></label>
+        </div>
+        <div class="filter-row-route">
+          <label for="route-select">Route</label>
+          <select id="route-select"><option value="">All routes</option></select>
         </div>
         <div class="filter-row-time">
           <label>Time from <input type="time" id="time-from"></label>
@@ -168,6 +176,10 @@ async function renderDashboard(container) {
     </div>
     <div id="dash-results"></div>
   `;
+
+  routeSelect = new TomSelect("#route-select", {
+    allowEmptyOption: true,
+  });
 
   // Load stops and settings in parallel
   try {
@@ -210,7 +222,7 @@ async function loadDashboardData() {
   const stopId = document.getElementById("stop-select").value;
   const from = document.getElementById("from-date").value;
   const to = document.getElementById("to-date").value;
-  const route = document.getElementById("route-select").value;
+  const route = routeSelect ? routeSelect.getValue() : "";
   const timeFrom = document.getElementById("time-from").value;
   const timeTo = document.getElementById("time-to").value;
 
@@ -236,16 +248,15 @@ async function loadDashboardData() {
     ]);
 
     // Update route selector
-    const routeSel = document.getElementById("route-select");
-    const currentRoute = routeSel.value;
-    routeSel.innerHTML =
-      '<option value="">All</option>' +
-      stopRoutes
-        .map(
-          (r) =>
-            `<option value="${escapeHtml(r)}" ${r === currentRoute ? "selected" : ""}>${escapeHtml(r)}</option>`
-        )
-        .join("");
+    if (routeSelect) {
+      const currentRoute = routeSelect.getValue();
+      routeSelect.clearOptions();
+      routeSelect.addOptions([
+        { value: "", text: "All routes" },
+        ...stopRoutes.map((r) => ({ value: r, text: r })),
+      ]);
+      routeSelect.setValue(stopRoutes.includes(currentRoute) ? currentRoute : "", true);
+    }
 
     document.getElementById("action-status").textContent = "";
     renderDashboardResults(summary, routes, hourly, observations);
