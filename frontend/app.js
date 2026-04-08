@@ -82,8 +82,18 @@ let currentPage = "dashboard";
 let hourlyChart = null;
 let stopSelect = null;
 
-function navigate(page) {
+const VALID_PAGES = ["dashboard", "observations", "stops"];
+
+function pageFromHash() {
+  const hash = window.location.hash.slice(1);
+  return VALID_PAGES.includes(hash) ? hash : "dashboard";
+}
+
+function navigate(page, updateHash = true) {
   currentPage = page;
+  if (updateHash && window.location.hash.slice(1) !== page) {
+    window.location.hash = page;
+  }
   document.querySelectorAll(".nav-links a").forEach((a) => {
     a.classList.toggle("active", a.dataset.page === page);
   });
@@ -110,7 +120,11 @@ document.addEventListener("DOMContentLoaded", () => {
       navigate(el.dataset.page);
     });
   });
-  navigate("dashboard");
+  navigate(pageFromHash());
+});
+
+window.addEventListener("hashchange", () => {
+  navigate(pageFromHash(), false);
 });
 
 // ---------------------------------------------------------------------------
