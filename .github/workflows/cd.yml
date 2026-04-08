@@ -28,33 +28,42 @@ jobs:
     outputs:
       webAppName: ${{ steps.set-outputs.outputs.webAppName }}
     steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+
       - name: Set resource outputs
         id: set-outputs
         run: |
           echo "webAppName=${{ env.AZURE_PROJECT_NAME }}-${{ env.AZURE_ENV }}-app" >> $GITHUB_OUTPUT
 
-      # Bicep deployment is temporarily skipped
-      # - name: Create resource group
-      #   run: |
-      #     az group create \
-      #       --name ${{ env.AZURE_RESOURCE_GROUP }} \
-      #       --location germanywestcentral \
-      #       2>/dev/null || true
-      #
-      # - name: Deploy Bicep
-      #   env:
-      #     SQL_ADMIN_PASSWORD: ${{ secrets.SQL_ADMIN_PASSWORD }}
-      #     DIGITRANSIT_API_KEY: ${{ secrets.DIGITRANSIT_API_KEY }}
-      #     NOTIFICATION_EMAIL: ${{ secrets.NOTIFICATION_EMAIL }}
-      #   run: |
-      #     az deployment group create \
-      #       --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
-      #       --template-file infra/main.bicep \
-      #       --parameters projectName=${{ env.AZURE_PROJECT_NAME }} \
-      #       --parameters env=${{ env.AZURE_ENV }} \
-      #       --parameters "digitransitApiKey=$DIGITRANSIT_API_KEY" \
-      #       --parameters "sqlAdminPassword=$SQL_ADMIN_PASSWORD" \
-      #       --parameters "notificationEmail=$NOTIFICATION_EMAIL"
+      - name: Azure Login
+        uses: azure/login@v3
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Create resource group
+        run: |
+          az group create \
+            --name ${{ env.AZURE_RESOURCE_GROUP }} \
+            --location germanywestcentral \
+            2>/dev/null || true
+
+      - name: Deploy Bicep
+        env:
+          SQL_ADMIN_PASSWORD: ${{ secrets.SQL_ADMIN_PASSWORD }}
+          DIGITRANSIT_API_KEY: ${{ secrets.DIGITRANSIT_API_KEY }}
+          NOTIFICATION_EMAIL: ${{ secrets.NOTIFICATION_EMAIL }}
+        run: |
+          az deployment group create \
+            --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
+            --template-file infra/main.bicep \
+            --parameters projectName=${{ env.AZURE_PROJECT_NAME }} \
+            --parameters env=${{ env.AZURE_ENV }} \
+            --parameters "digitransitApiKey=$DIGITRANSIT_API_KEY" \
+            --parameters "sqlAdminPassword=$SQL_ADMIN_PASSWORD" \
+            --parameters "notificationEmail=$NOTIFICATION_EMAIL"
 
   deploy-api:
     needs: deploy-infra
