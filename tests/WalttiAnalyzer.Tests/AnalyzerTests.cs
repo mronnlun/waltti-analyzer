@@ -94,6 +94,7 @@ public class AnalyzerTests : IDisposable
         var hour6 = hourly.First(h => (int)h["hour"]! == 6);
         Assert.Equal(2, hour6["departures"]);
         Assert.Equal(90.0, hour6["avg_late_seconds"]);
+        Assert.Equal(90.0, hour6["avg_delay_seconds"]);
     }
 
     [Fact]

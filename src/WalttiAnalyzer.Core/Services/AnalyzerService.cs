@@ -206,6 +206,7 @@ public class AnalyzerService
                 ["with_realtime"] = rtRows.Count,
                 ["avg_late_seconds"] = late.Count > 0 ? Math.Round(late.Average(), 1) : 0,
                 ["avg_early_seconds"] = early.Count > 0 ? Math.Round(early.Average(), 1) : 0,
+                ["avg_delay_seconds"] = clean.Count > 0 ? Math.Round(clean.Average(), 1) : 0,
             });
         }
         return result;
