@@ -242,10 +242,11 @@ public class DatabaseService
         AppendFilters(ref sql, parms, route, timeFrom, timeTo);
         AppendPastOnlyFilter(ref sql, parms);
         sql += " ORDER BY o.service_date DESC, o.scheduled_departure DESC";
+        sql += IsSqlite ? " LIMIT 300" : " OFFSET 0 ROWS FETCH NEXT 300 ROWS ONLY";
         return await ReadObservationsRawAsync(sql, parms, includeStopName: allStops);
     }
 
-    public async Task<List<Observation>> GetLatestObservationsAsync(int limit = 100, string? feedId = null)
+    public async Task<List<Observation>> GetLatestObservationsAsync(int limit = 300, string? feedId = null)
     {
         var parms = new List<(string Name, object? Value)>();
         var sql = $"SELECT {ObsColumns}, s.name AS stop_name {ObsJoins} WHERE o.realtime=1";
