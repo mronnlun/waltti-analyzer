@@ -469,6 +469,17 @@ function renderHourlyChart(data) {
           data: data.map((d) => d.avg_early_seconds),
           backgroundColor: "rgba(46,204,113,0.7)",
         },
+        {
+          label: "Average (s)",
+          data: data.map((d) => d.avg_delay_seconds),
+          type: "line",
+          borderColor: "black",
+          backgroundColor: "black",
+          borderWidth: 2,
+          pointRadius: 3,
+          fill: false,
+          order: 0,
+        },
       ],
     },
     options: {
