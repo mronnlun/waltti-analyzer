@@ -130,10 +130,13 @@ app.MapGet("/api/routes", async (DatabaseService db, IOptions<WalttiSettings> op
     return Results.Ok(routes);
 });
 
-app.MapGet("/api/routes-for-stop", async (string? stop_id, DatabaseService db) =>
+app.MapGet("/api/routes-for-stop", async (string? stop_id, DatabaseService db, IOptions<WalttiSettings> opts) =>
 {
     if (string.IsNullOrEmpty(stop_id))
-        return Results.BadRequest(new { error = "stop_id parameter required" });
+    {
+        var allRoutes = await db.GetAllRoutesAsync(opts.Value.FeedId);
+        return Results.Ok(allRoutes);
+    }
     var routes = await db.GetRoutesForStopAsync(stop_id);
     return Results.Ok(routes);
 });
@@ -141,17 +144,16 @@ app.MapGet("/api/routes-for-stop", async (string? stop_id, DatabaseService db) =
 app.MapGet("/api/observations", async (
     string? stop_id, string? date, string? from, string? to,
     string? route, string? time_from, string? time_to,
-    DatabaseService db, AnalyzerService analyzer) =>
+    DatabaseService db, AnalyzerService analyzer, IOptions<WalttiSettings> opts) =>
 {
     var startDate = from ?? date ?? "";
     var endDate = to ?? date ?? "";
     if (string.IsNullOrEmpty(startDate) || string.IsNullOrEmpty(endDate))
         return Results.BadRequest(new { error = "date or from/to parameters required" });
-    if (string.IsNullOrEmpty(stop_id))
-        return Results.BadRequest(new { error = "stop_id parameter required" });
 
+    var feedId = string.IsNullOrEmpty(stop_id) ? opts.Value.FeedId : null;
     var rows = await db.GetObservationsAsync(stop_id, startDate, endDate, route,
-        AnalyzerService.ParseTime(time_from), AnalyzerService.ParseTime(time_to));
+        AnalyzerService.ParseTime(time_from), AnalyzerService.ParseTime(time_to), feedId);
     return Results.Ok(rows);
 });
 
@@ -164,39 +166,42 @@ app.MapGet("/api/latest-observations", async (DatabaseService db, IOptions<Waltt
 app.MapGet("/api/summary", async (
     string? stop_id, string? from, string? to, string? route,
     string? time_from, string? time_to,
-    AnalyzerService analyzer) =>
+    AnalyzerService analyzer, IOptions<WalttiSettings> opts) =>
 {
-    if (string.IsNullOrEmpty(from) || string.IsNullOrEmpty(to) || string.IsNullOrEmpty(stop_id))
-        return Results.BadRequest(new { error = "stop_id, from, and to parameters required" });
+    if (string.IsNullOrEmpty(from) || string.IsNullOrEmpty(to))
+        return Results.BadRequest(new { error = "from and to parameters required" });
 
+    var feedId = string.IsNullOrEmpty(stop_id) ? opts.Value.FeedId : null;
     var result = await analyzer.GetSummaryAsync(stop_id, from, to, route,
-        AnalyzerService.ParseTime(time_from), AnalyzerService.ParseTime(time_to));
+        AnalyzerService.ParseTime(time_from), AnalyzerService.ParseTime(time_to), feedId);
     return Results.Ok(result);
 });
 
 app.MapGet("/api/route-breakdown", async (
     string? stop_id, string? from, string? to, string? route,
     string? time_from, string? time_to,
-    AnalyzerService analyzer) =>
+    AnalyzerService analyzer, IOptions<WalttiSettings> opts) =>
 {
-    if (string.IsNullOrEmpty(from) || string.IsNullOrEmpty(to) || string.IsNullOrEmpty(stop_id))
-        return Results.BadRequest(new { error = "stop_id, from, and to parameters required" });
+    if (string.IsNullOrEmpty(from) || string.IsNullOrEmpty(to))
+        return Results.BadRequest(new { error = "from and to parameters required" });
 
+    var feedId = string.IsNullOrEmpty(stop_id) ? opts.Value.FeedId : null;
     var result = await analyzer.GetRouteBreakdownAsync(stop_id, from, to, route,
-        AnalyzerService.ParseTime(time_from), AnalyzerService.ParseTime(time_to));
+        AnalyzerService.ParseTime(time_from), AnalyzerService.ParseTime(time_to), feedId);
     return Results.Ok(result);
 });
 
 app.MapGet("/api/delay-by-hour", async (
     string? stop_id, string? from, string? to, string? route,
     string? time_from, string? time_to,
-    AnalyzerService analyzer) =>
+    AnalyzerService analyzer, IOptions<WalttiSettings> opts) =>
 {
-    if (string.IsNullOrEmpty(from) || string.IsNullOrEmpty(to) || string.IsNullOrEmpty(stop_id))
-        return Results.BadRequest(new { error = "stop_id, from, and to parameters required" });
+    if (string.IsNullOrEmpty(from) || string.IsNullOrEmpty(to))
+        return Results.BadRequest(new { error = "from and to parameters required" });
 
+    var feedId = string.IsNullOrEmpty(stop_id) ? opts.Value.FeedId : null;
     var result = await analyzer.GetDelayByHourAsync(stop_id, from, to, route,
-        AnalyzerService.ParseTime(time_from), AnalyzerService.ParseTime(time_to));
+        AnalyzerService.ParseTime(time_from), AnalyzerService.ParseTime(time_to), feedId);
     return Results.Ok(result);
 });
 

@@ -160,6 +160,80 @@ public class AnalyzerTests : IDisposable
     }
 
     [Fact]
+    public async Task SummaryAllStops()
+    {
+        // Seed a second stop and observations for both stops
+        await _fixture.Db.UpsertStopAsync("Vaasa:999999", "OtherStop", null, 63.0, 21.5);
+        await _fixture.Db.UpsertTripsBatchAsync([
+            new Dictionary<string, object?> { ["gtfs_id"] = "Vaasa:alltrip1", ["route_short_name"] = "5",
+                ["route_long_name"] = "R5", ["mode"] = "BUS", ["headsign"] = "H", ["direction_id"] = 0 },
+            new Dictionary<string, object?> { ["gtfs_id"] = "Vaasa:alltrip2", ["route_short_name"] = "7",
+                ["route_long_name"] = "R7", ["mode"] = "BUS", ["headsign"] = "H", ["direction_id"] = 0 },
+        ]);
+        await _fixture.Db.UpsertObservationsBatchAsync([
+            new Dictionary<string, object?> {
+                ["stop_gtfs_id"] = "Vaasa:309392", ["trip_gtfs_id"] = "Vaasa:alltrip1",
+                ["service_date"] = "2026-04-02", ["scheduled_arrival"] = 24000,
+                ["scheduled_departure"] = 24100, ["realtime_arrival"] = null,
+                ["realtime_departure"] = null, ["arrival_delay"] = 0, ["departure_delay"] = 60,
+                ["realtime"] = 1, ["realtime_state"] = "UPDATED",
+                ["queried_at"] = DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
+            },
+            new Dictionary<string, object?> {
+                ["stop_gtfs_id"] = "Vaasa:999999", ["trip_gtfs_id"] = "Vaasa:alltrip2",
+                ["service_date"] = "2026-04-02", ["scheduled_arrival"] = 25000,
+                ["scheduled_departure"] = 25100, ["realtime_arrival"] = null,
+                ["realtime_departure"] = null, ["arrival_delay"] = 0, ["departure_delay"] = 120,
+                ["realtime"] = 1, ["realtime_state"] = "UPDATED",
+                ["queried_at"] = DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
+            },
+        ]);
+
+        // All stops via feedId
+        var summary = await _analyzer.GetSummaryAsync(null, "2026-04-02", "2026-04-02", feedId: "Vaasa");
+        Assert.Equal(2, summary["total_departures"]);
+
+        // Single stop still works
+        var single = await _analyzer.GetSummaryAsync("Vaasa:309392", "2026-04-02", "2026-04-02");
+        Assert.Equal(1, single["total_departures"]);
+    }
+
+    [Fact]
+    public async Task RouteBreakdownAllStops()
+    {
+        await _fixture.Db.UpsertStopAsync("Vaasa:888888", "ThirdStop", null, 63.1, 21.6);
+        await _fixture.Db.UpsertTripsBatchAsync([
+            new Dictionary<string, object?> { ["gtfs_id"] = "Vaasa:rbtrip1", ["route_short_name"] = "11",
+                ["route_long_name"] = "R11", ["mode"] = "BUS", ["headsign"] = "H", ["direction_id"] = 0 },
+            new Dictionary<string, object?> { ["gtfs_id"] = "Vaasa:rbtrip2", ["route_short_name"] = "12",
+                ["route_long_name"] = "R12", ["mode"] = "BUS", ["headsign"] = "H", ["direction_id"] = 0 },
+        ]);
+        await _fixture.Db.UpsertObservationsBatchAsync([
+            new Dictionary<string, object?> {
+                ["stop_gtfs_id"] = "Vaasa:309392", ["trip_gtfs_id"] = "Vaasa:rbtrip1",
+                ["service_date"] = "2026-04-03", ["scheduled_arrival"] = 24000,
+                ["scheduled_departure"] = 24100, ["realtime_arrival"] = null,
+                ["realtime_departure"] = null, ["arrival_delay"] = 0, ["departure_delay"] = 60,
+                ["realtime"] = 1, ["realtime_state"] = "UPDATED",
+                ["queried_at"] = DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
+            },
+            new Dictionary<string, object?> {
+                ["stop_gtfs_id"] = "Vaasa:888888", ["trip_gtfs_id"] = "Vaasa:rbtrip2",
+                ["service_date"] = "2026-04-03", ["scheduled_arrival"] = 25000,
+                ["scheduled_departure"] = 25100, ["realtime_arrival"] = null,
+                ["realtime_departure"] = null, ["arrival_delay"] = 0, ["departure_delay"] = 120,
+                ["realtime"] = 1, ["realtime_state"] = "UPDATED",
+                ["queried_at"] = DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
+            },
+        ]);
+
+        var breakdown = await _analyzer.GetRouteBreakdownAsync(null, "2026-04-03", "2026-04-03", feedId: "Vaasa");
+        Assert.Equal(2, breakdown.Count);
+        Assert.Contains(breakdown, r => (string)r["route"]! == "11");
+        Assert.Contains(breakdown, r => (string)r["route"]! == "12");
+    }
+
+    [Fact]
     public void ParseTime()
     {
         Assert.Equal(16 * 3600 + 5 * 60, AnalyzerService.ParseTime("16:05"));

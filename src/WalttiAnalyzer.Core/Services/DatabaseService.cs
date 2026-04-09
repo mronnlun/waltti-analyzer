@@ -227,19 +227,22 @@ public class DatabaseService
         }
     }
 
-    public async Task<List<Observation>> GetObservationsAsync(string stopId,
+    public async Task<List<Observation>> GetObservationsAsync(string? stopId,
         string startDate, string endDate, string? route = null,
-        int? timeFrom = null, int? timeTo = null)
+        int? timeFrom = null, int? timeTo = null, string? feedId = null)
     {
+        var allStops = string.IsNullOrEmpty(stopId);
         var parms = new List<(string Name, object? Value)>
         {
-            ("@sid", stopId), ("@start", startDate), ("@end", endDate)
+            ("@start", startDate), ("@end", endDate)
         };
-        var sql = $"SELECT {ObsColumns} {ObsJoins} WHERE s.gtfs_id=@sid AND o.service_date>=@start AND o.service_date<=@end";
+        var selectCols = allStops ? $"SELECT {ObsColumns}, s.name AS stop_name" : $"SELECT {ObsColumns}";
+        var sql = $"{selectCols} {ObsJoins} WHERE o.service_date>=@start AND o.service_date<=@end";
+        AppendStopFilter(ref sql, parms, stopId, feedId);
         AppendFilters(ref sql, parms, route, timeFrom, timeTo);
         AppendPastOnlyFilter(ref sql, parms);
         sql += " ORDER BY o.service_date DESC, o.scheduled_departure DESC";
-        return await ReadObservationsRawAsync(sql, parms, includeStopName: false);
+        return await ReadObservationsRawAsync(sql, parms, includeStopName: allStops);
     }
 
     public async Task<List<Observation>> GetLatestObservationsAsync(int limit = 100, string? feedId = null)
@@ -295,6 +298,13 @@ public class DatabaseService
         JOIN stops s ON o.stop_id=s.id
         JOIN trips t ON o.trip_id=t.id
         LEFT JOIN realtime_states rs ON o.realtime_state_id=rs.id";
+
+    private static void AppendStopFilter(ref string sql, List<(string Name, object? Value)> parms,
+        string? stopId, string? feedId)
+    {
+        if (!string.IsNullOrEmpty(stopId)) { sql += " AND s.gtfs_id=@sid"; parms.Add(("@sid", stopId)); }
+        else if (!string.IsNullOrEmpty(feedId)) { sql += " AND s.gtfs_id LIKE @feed"; parms.Add(("@feed", $"{feedId}:%")); }
+    }
 
     private static void AppendFilters(ref string sql, List<(string Name, object? Value)> parms,
         string? route, int? timeFrom, int? timeTo)

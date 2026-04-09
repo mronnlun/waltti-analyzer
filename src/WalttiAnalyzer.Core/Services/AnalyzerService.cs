@@ -44,17 +44,18 @@ public class AnalyzerService
         return minutes > 0 ? $"{sign}{minutes}m {secs:D2}s" : $"{sign}{secs}s";
     }
 
-    public async Task<Dictionary<string, object?>> GetSummaryAsync(string stopId,
+    public async Task<Dictionary<string, object?>> GetSummaryAsync(string? stopId,
         string startDate, string endDate, string? route = null,
-        int? timeFrom = null, int? timeTo = null)
+        int? timeFrom = null, int? timeTo = null, string? feedId = null)
     {
         var sql = @"SELECT o.departure_delay, o.realtime, o.service_date, rs.name AS realtime_state
                     FROM observations o
                     JOIN trips t ON o.trip_id=t.id
                     JOIN stops s ON o.stop_id=s.id
                     LEFT JOIN realtime_states rs ON o.realtime_state_id=rs.id
-                    WHERE s.gtfs_id=@sid AND o.service_date>=@start AND o.service_date<=@end";
-        var parms = new List<(string, object?)> { ("@sid", stopId), ("@start", startDate), ("@end", endDate) };
+                    WHERE o.service_date>=@start AND o.service_date<=@end";
+        var parms = new List<(string, object?)> { ("@start", startDate), ("@end", endDate) };
+        AppendStopFilter(ref sql, parms, stopId, feedId);
         AppendFilters(ref sql, parms, route, timeFrom, timeTo);
         AppendPastOnlyFilter(ref sql, parms);
 
@@ -116,16 +117,17 @@ public class AnalyzerService
         };
     }
 
-    public async Task<List<Dictionary<string, object?>>> GetRouteBreakdownAsync(string stopId,
+    public async Task<List<Dictionary<string, object?>>> GetRouteBreakdownAsync(string? stopId,
         string startDate, string endDate, string? route = null,
-        int? timeFrom = null, int? timeTo = null)
+        int? timeFrom = null, int? timeTo = null, string? feedId = null)
     {
         var sql = @"SELECT t.route_short_name, o.departure_delay, o.realtime
                     FROM observations o
                     JOIN trips t ON o.trip_id=t.id
                     JOIN stops s ON o.stop_id=s.id
-                    WHERE s.gtfs_id=@sid AND o.service_date>=@start AND o.service_date<=@end";
-        var parms = new List<(string, object?)> { ("@sid", stopId), ("@start", startDate), ("@end", endDate) };
+                    WHERE o.service_date>=@start AND o.service_date<=@end";
+        var parms = new List<(string, object?)> { ("@start", startDate), ("@end", endDate) };
+        AppendStopFilter(ref sql, parms, stopId, feedId);
         AppendFilters(ref sql, parms, route, timeFrom, timeTo);
         AppendPastOnlyFilter(ref sql, parms);
 
@@ -167,16 +169,17 @@ public class AnalyzerService
         return result;
     }
 
-    public async Task<List<Dictionary<string, object?>>> GetDelayByHourAsync(string stopId,
+    public async Task<List<Dictionary<string, object?>>> GetDelayByHourAsync(string? stopId,
         string startDate, string endDate, string? route = null,
-        int? timeFrom = null, int? timeTo = null)
+        int? timeFrom = null, int? timeTo = null, string? feedId = null)
     {
         var sql = @"SELECT (o.scheduled_departure / 3600) AS hour, o.departure_delay, o.realtime
                     FROM observations o
                     JOIN trips t ON o.trip_id=t.id
                     JOIN stops s ON o.stop_id=s.id
-                    WHERE s.gtfs_id=@sid AND o.service_date>=@start AND o.service_date<=@end";
-        var parms = new List<(string, object?)> { ("@sid", stopId), ("@start", startDate), ("@end", endDate) };
+                    WHERE o.service_date>=@start AND o.service_date<=@end";
+        var parms = new List<(string, object?)> { ("@start", startDate), ("@end", endDate) };
+        AppendStopFilter(ref sql, parms, stopId, feedId);
         AppendFilters(ref sql, parms, route, timeFrom, timeTo);
         AppendPastOnlyFilter(ref sql, parms);
 
@@ -211,6 +214,13 @@ public class AnalyzerService
     // -----------------------------------------------------------------------
     // Helpers
     // -----------------------------------------------------------------------
+
+    private static void AppendStopFilter(ref string sql, List<(string Name, object? Value)> parms,
+        string? stopId, string? feedId)
+    {
+        if (!string.IsNullOrEmpty(stopId)) { sql += " AND s.gtfs_id=@sid"; parms.Add(("@sid", stopId)); }
+        else if (!string.IsNullOrEmpty(feedId)) { sql += " AND s.gtfs_id LIKE @feed"; parms.Add(("@feed", $"{feedId}:%")); }
+    }
 
     private static void AppendFilters(ref string sql, List<(string Name, object? Value)> parms,
         string? route, int? timeFrom, int? timeTo)
