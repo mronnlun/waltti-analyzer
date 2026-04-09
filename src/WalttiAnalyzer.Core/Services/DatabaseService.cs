@@ -98,6 +98,20 @@ public class DatabaseService
         return await q.Select(o => o.Trip!.RouteShortName!).Distinct().OrderBy(r => r).ToListAsync();
     }
 
+    public async Task<List<string>> GetHeadsignsForStopAsync(string stopId) =>
+        await _context.Observations
+            .Where(o => o.Stop!.GtfsId == stopId && o.Trip!.Headsign != null)
+            .Select(o => o.Trip!.Headsign!)
+            .Distinct().OrderBy(h => h).ToListAsync();
+
+    public async Task<List<string>> GetAllHeadsignsAsync(string? feedId = null)
+    {
+        var q = _context.Observations.Where(o => o.Trip!.Headsign != null);
+        if (!string.IsNullOrEmpty(feedId))
+            q = q.Where(o => o.Stop!.GtfsId.StartsWith(feedId + ":"));
+        return await q.Select(o => o.Trip!.Headsign!).Distinct().OrderBy(h => h).ToListAsync();
+    }
+
     // -----------------------------------------------------------------------
     // Trip operations
     // -----------------------------------------------------------------------
@@ -229,7 +243,7 @@ public class DatabaseService
 
     public async Task<List<Observation>> GetObservationsAsync(string? stopId,
         string startDate, string endDate, string? route = null,
-        int? timeFrom = null, int? timeTo = null, string? feedId = null)
+        int? timeFrom = null, int? timeTo = null, string? feedId = null, string? headsign = null)
     {
         var allStops = string.IsNullOrEmpty(stopId);
         var parms = new List<(string Name, object? Value)>
@@ -239,7 +253,7 @@ public class DatabaseService
         var selectCols = allStops ? $"SELECT {ObsColumns}, s.name AS stop_name" : $"SELECT {ObsColumns}";
         var sql = $"{selectCols} {ObsJoins} WHERE o.service_date>=@start AND o.service_date<=@end";
         AppendStopFilter(ref sql, parms, stopId, feedId);
-        AppendFilters(ref sql, parms, route, timeFrom, timeTo);
+        AppendFilters(ref sql, parms, route, timeFrom, timeTo, headsign);
         AppendPastOnlyFilter(ref sql, parms);
         sql += " ORDER BY o.service_date DESC, o.scheduled_departure DESC";
         sql += IsSqlite ? " LIMIT 300" : " OFFSET 0 ROWS FETCH NEXT 300 ROWS ONLY";
@@ -308,9 +322,10 @@ public class DatabaseService
     }
 
     private static void AppendFilters(ref string sql, List<(string Name, object? Value)> parms,
-        string? route, int? timeFrom, int? timeTo)
+        string? route, int? timeFrom, int? timeTo, string? headsign = null)
     {
         if (!string.IsNullOrEmpty(route)) { sql += " AND t.route_short_name=@route"; parms.Add(("@route", route)); }
+        if (!string.IsNullOrEmpty(headsign)) { sql += " AND t.headsign=@headsign"; parms.Add(("@headsign", headsign)); }
         if (timeFrom.HasValue) { sql += " AND o.scheduled_departure>=@tf"; parms.Add(("@tf", timeFrom.Value)); }
         if (timeTo.HasValue) { sql += " AND o.scheduled_departure<=@tt"; parms.Add(("@tt", timeTo.Value)); }
     }
