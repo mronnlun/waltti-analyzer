@@ -439,7 +439,7 @@ async function renderObservations(container) {
 
   container.innerHTML = `
     <h1>Latest GPS Observations</h1>
-    <p class="subtitle">100 most recent GPS-tracked departures</p>
+    <p class="subtitle">300 most recent GPS-tracked departures</p>
     <div id="obs-content"><p>Loading…</p></div>
   `;
 

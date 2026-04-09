@@ -159,7 +159,7 @@ app.MapGet("/api/observations", async (
 
 app.MapGet("/api/latest-observations", async (DatabaseService db, IOptions<WalttiSettings> opts) =>
 {
-    var rows = await db.GetLatestObservationsAsync(100, opts.Value.FeedId);
+    var rows = await db.GetLatestObservationsAsync(300, opts.Value.FeedId);
     return Results.Ok(rows);
 });
 
