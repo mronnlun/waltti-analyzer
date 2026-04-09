@@ -253,6 +253,30 @@ button:hover {
     color: #7f8c8d;
 }
 
+.data-table th.sortable {
+    cursor: pointer;
+    user-select: none;
+}
+
+.data-table th.sortable:hover {
+    background: #dde1e2;
+    color: #2c3e50;
+}
+
+.data-table th.sort-asc::after,
+.data-table th.sort-desc::after {
+    margin-left: 0.35em;
+    font-size: 0.75em;
+}
+
+.data-table th.sort-asc::after {
+    content: "▲";
+}
+
+.data-table th.sort-desc::after {
+    content: "▼";
+}
+
 .data-table tbody tr:nth-child(even) {
     background: #f9f9f9;
 }
