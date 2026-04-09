@@ -27,7 +27,35 @@ public class DatabaseService
     // Schema
     // -----------------------------------------------------------------------
 
-    public void EnsureCreated() => _context.Database.EnsureCreated();
+    public void EnsureCreated()
+    {
+        _context.Database.EnsureCreated();
+        SeedRealtimeStates();
+    }
+
+    /// <summary>
+    /// Ensure all known GTFS-RT realtime_state values exist in the seed table.
+    /// EnsureCreated only seeds a table on first creation, so we need this for
+    /// existing databases that were created before new states were added.
+    /// </summary>
+    private void SeedRealtimeStates()
+    {
+        var wanted = new (int Id, string Name)[]
+        {
+            (0, "SCHEDULED"),
+            (1, "UPDATED"),
+            (2, "CANCELED"),
+            (3, "SKIPPED"),
+            (4, "ADDED"),
+            (5, "MODIFIED"),
+        };
+        var existing = _context.RealtimeStates.Select(rs => rs.Name).ToHashSet();
+        var toAdd = wanted.Where(w => !existing.Contains(w.Name)).ToList();
+        if (toAdd.Count == 0) return;
+        foreach (var (id, name) in toAdd)
+            _context.RealtimeStates.Add(new Models.RealtimeState { Id = id, Name = name });
+        _context.SaveChanges();
+    }
 
     // -----------------------------------------------------------------------
     // Stop operations
