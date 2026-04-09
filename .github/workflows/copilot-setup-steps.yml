@@ -27,3 +27,6 @@ jobs:
 
       - name: Restore NuGet packages
         run: dotnet restore src/WalttiAnalyzer.Web/WalttiAnalyzer.Web.csproj
+
+      - name: Set Azure Monitor environment variables
+        run: echo "LOG_ANALYTICS_WORKSPACE_ID=${{ vars.LOG_ANALYTICS_WORKSPACE_ID }}" >> $GITHUB_ENV
