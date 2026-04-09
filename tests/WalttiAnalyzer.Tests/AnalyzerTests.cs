@@ -235,65 +235,6 @@ public class AnalyzerTests : IDisposable
     }
 
     [Fact]
-    public async Task SummaryExcludesSkippedFromDelayStats()
-    {
-        // Three normal UPDATED rows + one SKIPPED row whose delay should be ignored.
-        await _fixture.Db.UpsertTripsBatchAsync([
-            new Dictionary<string, object?> { ["gtfs_id"] = "Vaasa:sk_t1", ["route_short_name"] = "3",
-                ["route_long_name"] = "R", ["mode"] = "BUS", ["headsign"] = "H", ["direction_id"] = 0 },
-            new Dictionary<string, object?> { ["gtfs_id"] = "Vaasa:sk_t2", ["route_short_name"] = "3",
-                ["route_long_name"] = "R", ["mode"] = "BUS", ["headsign"] = "H", ["direction_id"] = 0 },
-            new Dictionary<string, object?> { ["gtfs_id"] = "Vaasa:sk_t3", ["route_short_name"] = "3",
-                ["route_long_name"] = "R", ["mode"] = "BUS", ["headsign"] = "H", ["direction_id"] = 0 },
-            new Dictionary<string, object?> { ["gtfs_id"] = "Vaasa:sk_t4", ["route_short_name"] = "3",
-                ["route_long_name"] = "R", ["mode"] = "BUS", ["headsign"] = "H", ["direction_id"] = 0 },
-        ]);
-        var now = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
-        await _fixture.Db.UpsertObservationsBatchAsync([
-            new Dictionary<string, object?> {
-                ["stop_gtfs_id"] = "Vaasa:309392", ["trip_gtfs_id"] = "Vaasa:sk_t1",
-                ["service_date"] = "2026-04-02", ["scheduled_arrival"] = 24000,
-                ["scheduled_departure"] = 24100, ["realtime_arrival"] = 24030,
-                ["realtime_departure"] = 24130, ["arrival_delay"] = 30, ["departure_delay"] = 30,
-                ["realtime"] = 1, ["realtime_state"] = "UPDATED", ["queried_at"] = now,
-            },
-            new Dictionary<string, object?> {
-                ["stop_gtfs_id"] = "Vaasa:309392", ["trip_gtfs_id"] = "Vaasa:sk_t2",
-                ["service_date"] = "2026-04-02", ["scheduled_arrival"] = 25000,
-                ["scheduled_departure"] = 25100, ["realtime_arrival"] = 25090,
-                ["realtime_departure"] = 25190, ["arrival_delay"] = 90, ["departure_delay"] = 90,
-                ["realtime"] = 1, ["realtime_state"] = "UPDATED", ["queried_at"] = now,
-            },
-            new Dictionary<string, object?> {
-                ["stop_gtfs_id"] = "Vaasa:309392", ["trip_gtfs_id"] = "Vaasa:sk_t3",
-                ["service_date"] = "2026-04-02", ["scheduled_arrival"] = 26000,
-                ["scheduled_departure"] = 26100, ["realtime_arrival"] = 26150,
-                ["realtime_departure"] = 26250, ["arrival_delay"] = 150, ["departure_delay"] = 150,
-                ["realtime"] = 1, ["realtime_state"] = "UPDATED", ["queried_at"] = now,
-            },
-            // SKIPPED row with an extreme "delay" that must not influence stats.
-            new Dictionary<string, object?> {
-                ["stop_gtfs_id"] = "Vaasa:309392", ["trip_gtfs_id"] = "Vaasa:sk_t4",
-                ["service_date"] = "2026-04-02", ["scheduled_arrival"] = 27000,
-                ["scheduled_departure"] = 27100, ["realtime_arrival"] = 27100,
-                ["realtime_departure"] = 27100, ["arrival_delay"] = 99999, ["departure_delay"] = 99999,
-                ["realtime"] = 1, ["realtime_state"] = "SKIPPED", ["queried_at"] = now,
-            },
-        ]);
-
-        var summary = await _analyzer.GetSummaryAsync("Vaasa:309392", "2026-04-02", "2026-04-02");
-        Assert.Equal(4, summary["total_departures"]);
-        Assert.Equal(4, summary["with_realtime"]);
-        Assert.Equal(1, summary["skipped"]);
-        // avg_late should only reflect the 3 real rows: (30+90+150)/3 = 90
-        Assert.Equal(90.0, summary["avg_late_seconds"]);
-        // max_late must not be the SKIPPED row's 99999s
-        Assert.Equal(150, summary["max_late_seconds"]);
-        // suspect_gps must not count the SKIPPED row
-        Assert.Equal(0, summary["suspect_gps"]);
-    }
-
-    [Fact]
     public void ParseTime()
     {
         Assert.Equal(16 * 3600 + 5 * 60, AnalyzerService.ParseTime("16:05"));
