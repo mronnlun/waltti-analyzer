@@ -193,21 +193,28 @@ async function renderDashboard(container) {
       fetchJSON("stops"),
       fetchJSON("status"),
     ]);
+    const allStopsOption = { value: "", name: "All stops", id: "" };
     stopSelect = new TomSelect("#stop-select", {
       placeholder: "Select a stop…",
       valueField: "value",
       labelField: "name",
       searchField: ["name", "id"],
-      options: stops.map((s) => ({ value: s.gtfs_id, name: s.name, id: s.gtfs_id })),
-      items: status.default_stop_id ? [status.default_stop_id] : [],
+      options: [allStopsOption, ...stops.map((s) => ({ value: s.gtfs_id, name: s.name, id: s.gtfs_id }))],
+      items: status.default_stop_id ? [status.default_stop_id] : [""],
       render: {
         option: function (data, escape) {
+          if (data.value === "") {
+            return `<div class="option ts-stop-option ts-stop-all"><span class="ts-stop-name">${escape(data.name)}</span></div>`;
+          }
           return `<div class="option ts-stop-option">
             <span class="ts-stop-name">${escape(data.name)}</span>
             <span class="ts-stop-id">${escape(data.id)}</span>
           </div>`;
         },
         item: function (data, escape) {
+          if (data.value === "") {
+            return `<div class="item">${escape(data.name)}</div>`;
+          }
           return `<div class="item" title="${escape(data.name)} (${escape(data.id)})">${escape(data.name)}</div>`;
         },
       },
@@ -235,25 +242,30 @@ async function loadDashboardData() {
   const timeFrom = document.getElementById("time-from").value;
   const timeTo = document.getElementById("time-to").value;
 
-  if (!stopId || !from || !to) {
-    document.getElementById("action-status").textContent = "Select a stop and date range";
+  if (!from || !to) {
+    document.getElementById("action-status").textContent = "Select a date range";
     return;
   }
 
   document.getElementById("action-status").textContent = "Loading…";
 
-  const params = new URLSearchParams({ stop_id: stopId, from, to });
+  const allStops = stopId === "";
+  const params = new URLSearchParams({ from, to });
+  if (!allStops) params.set("stop_id", stopId);
   if (route) params.set("route", route);
   if (timeFrom) params.set("time_from", timeFrom);
   if (timeTo) params.set("time_to", timeTo);
 
   try {
+    const routesEndpoint = allStops
+      ? "routes"
+      : `routes-for-stop?stop_id=${encodeURIComponent(stopId)}`;
     const [summary, routes, hourly, observations, stopRoutes] = await Promise.all([
       fetchJSON(`summary?${params}`),
       fetchJSON(`route-breakdown?${params}`),
       fetchJSON(`delay-by-hour?${params}`),
       fetchJSON(`observations?${params}`),
-      fetchJSON(`routes-for-stop?stop_id=${encodeURIComponent(stopId)}`),
+      fetchJSON(routesEndpoint),
     ]);
 
     // Update route selector
@@ -269,13 +281,13 @@ async function loadDashboardData() {
     }
 
     document.getElementById("action-status").textContent = "";
-    renderDashboardResults(summary, routes, hourly, observations);
+    renderDashboardResults(summary, routes, hourly, observations, allStops);
   } catch (err) {
     document.getElementById("action-status").textContent = `Error: ${err.message}`;
   }
 }
 
-function renderDashboardResults(summary, routes, hourly, observations) {
+function renderDashboardResults(summary, routes, hourly, observations, allStops = false) {
   const el = document.getElementById("dash-results");
 
   if (!summary || summary.total_departures === 0) {
@@ -351,7 +363,7 @@ function renderDashboardResults(summary, routes, hourly, observations) {
       <div class="table-responsive">
       <table class="data-table" style="width:100%">
         <thead><tr>
-          <th>Date</th><th>Route</th><th>Headsign</th><th>Scheduled</th>
+          <th>Date</th>${allStops ? "<th>Stop</th>" : ""}<th>Route</th><th>Headsign</th><th>Scheduled</th>
           <th>Actual</th><th>Deviation</th><th>GPS</th>
         </tr></thead><tbody>`;
     for (const o of pastObservations) {
@@ -360,6 +372,7 @@ function renderDashboardResults(summary, routes, hourly, observations) {
       const cls = isSuspect ? ' class="suspect-row"' : "";
       html += `<tr${cls}>
         <td>${escapeHtml(o.service_date)}</td>
+        ${allStops ? `<td>${escapeHtml(o.stop_name || o.stop_gtfs_id)}</td>` : ""}
         <td>${escapeHtml(o.route_short_name || "")}</td>
         <td>${escapeHtml(o.headsign || "")}</td>
         <td>${formatTime(o.scheduled_departure)}</td>
