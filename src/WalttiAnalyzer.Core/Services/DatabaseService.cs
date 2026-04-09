@@ -250,6 +250,7 @@ public class DatabaseService
         var parms = new List<(string Name, object? Value)>();
         var sql = $"SELECT {ObsColumns}, s.name AS stop_name {ObsJoins} WHERE o.realtime=1";
         if (!string.IsNullOrEmpty(feedId)) { sql += " AND s.gtfs_id LIKE @feed"; parms.Add(("@feed", $"{feedId}:%")); }
+        AppendPastOnlyFilter(ref sql, parms);
         sql += " ORDER BY o.queried_at DESC, o.service_date DESC, o.scheduled_departure DESC";
         sql += IsSqlite ? " LIMIT @lim" : " OFFSET 0 ROWS FETCH NEXT @lim ROWS ONLY";
         parms.Add(("@lim", limit));
