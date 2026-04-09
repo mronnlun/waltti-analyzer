@@ -85,14 +85,16 @@ h2 {
 }
 
 .filter-row-stop,
-.filter-row-route {
+.filter-row-route,
+.filter-row-headsign {
     display: flex;
     align-items: center;
     gap: 0.5rem;
 }
 
 .filter-row-stop label,
-.filter-row-route label {
+.filter-row-route label,
+.filter-row-headsign label {
     font-size: 0.9rem;
     flex-shrink: 0;
 }
@@ -100,7 +102,9 @@ h2 {
 .filter-row-stop select,
 .filter-row-stop .ts-wrapper,
 .filter-row-route select,
-.filter-row-route .ts-wrapper {
+.filter-row-route .ts-wrapper,
+.filter-row-headsign select,
+.filter-row-headsign .ts-wrapper {
     flex: 1;
 }
 

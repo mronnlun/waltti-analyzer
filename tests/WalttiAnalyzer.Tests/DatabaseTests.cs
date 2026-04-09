@@ -113,6 +113,38 @@ public class DatabaseTests : IDisposable
     }
 
     [Fact]
+    public async Task GetObservationsWithHeadsignFilter()
+    {
+        await _fixture.Db.UpsertTripsBatchAsync([new Dictionary<string, object?>
+        {
+            ["gtfs_id"] = "Vaasa:trip_hs_a",
+            ["route_short_name"] = "3",
+            ["route_long_name"] = "Gerby - Keskusta",
+            ["mode"] = "BUS",
+            ["headsign"] = "Keskusta",
+            ["direction_id"] = 1,
+        }]);
+        await _fixture.Db.UpsertTripsBatchAsync([new Dictionary<string, object?>
+        {
+            ["gtfs_id"] = "Vaasa:trip_hs_b",
+            ["route_short_name"] = "3",
+            ["route_long_name"] = "Gerby - Keskusta",
+            ["mode"] = "BUS",
+            ["headsign"] = "Gerby",
+            ["direction_id"] = 0,
+        }]);
+        await _fixture.Db.UpsertObservationsBatchAsync([MakeObs("Vaasa:trip_hs_a")]);
+        await _fixture.Db.UpsertObservationsBatchAsync([MakeObs("Vaasa:trip_hs_b", scheduledDep: 25000)]);
+
+        var all = await _fixture.Db.GetObservationsAsync("Vaasa:309392", "2026-04-02", "2026-04-02");
+        Assert.Equal(2, all.Count);
+
+        var filtered = await _fixture.Db.GetObservationsAsync("Vaasa:309392", "2026-04-02", "2026-04-02", headsign: "Keskusta");
+        Assert.Single(filtered);
+        Assert.Equal("Keskusta", filtered[0].Headsign);
+    }
+
+    [Fact]
     public async Task GetObservationsWithRouteFilter()
     {
         await EnsureTripAsync("Vaasa:trip_a", "3");

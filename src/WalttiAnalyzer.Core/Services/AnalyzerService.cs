@@ -46,7 +46,7 @@ public class AnalyzerService
 
     public async Task<Dictionary<string, object?>> GetSummaryAsync(string? stopId,
         string startDate, string endDate, string? route = null,
-        int? timeFrom = null, int? timeTo = null, string? feedId = null)
+        int? timeFrom = null, int? timeTo = null, string? feedId = null, string? headsign = null)
     {
         var sql = @"SELECT o.departure_delay, o.realtime, o.service_date, rs.name AS realtime_state
                     FROM observations o
@@ -56,7 +56,7 @@ public class AnalyzerService
                     WHERE o.service_date>=@start AND o.service_date<=@end";
         var parms = new List<(string, object?)> { ("@start", startDate), ("@end", endDate) };
         AppendStopFilter(ref sql, parms, stopId, feedId);
-        AppendFilters(ref sql, parms, route, timeFrom, timeTo);
+        AppendFilters(ref sql, parms, route, timeFrom, timeTo, headsign);
         AppendPastOnlyFilter(ref sql, parms);
 
         var rows = await QueryRawAsync(sql, parms, r => (
@@ -119,7 +119,7 @@ public class AnalyzerService
 
     public async Task<List<Dictionary<string, object?>>> GetRouteBreakdownAsync(string? stopId,
         string startDate, string endDate, string? route = null,
-        int? timeFrom = null, int? timeTo = null, string? feedId = null)
+        int? timeFrom = null, int? timeTo = null, string? feedId = null, string? headsign = null)
     {
         var sql = @"SELECT t.route_short_name, o.departure_delay, o.realtime
                     FROM observations o
@@ -128,7 +128,7 @@ public class AnalyzerService
                     WHERE o.service_date>=@start AND o.service_date<=@end";
         var parms = new List<(string, object?)> { ("@start", startDate), ("@end", endDate) };
         AppendStopFilter(ref sql, parms, stopId, feedId);
-        AppendFilters(ref sql, parms, route, timeFrom, timeTo);
+        AppendFilters(ref sql, parms, route, timeFrom, timeTo, headsign);
         AppendPastOnlyFilter(ref sql, parms);
 
         var raw = await QueryRawAsync(sql, parms, r => (
@@ -171,7 +171,7 @@ public class AnalyzerService
 
     public async Task<List<Dictionary<string, object?>>> GetDelayByHourAsync(string? stopId,
         string startDate, string endDate, string? route = null,
-        int? timeFrom = null, int? timeTo = null, string? feedId = null)
+        int? timeFrom = null, int? timeTo = null, string? feedId = null, string? headsign = null)
     {
         var sql = @"SELECT (o.scheduled_departure / 3600) AS hour, o.departure_delay, o.realtime
                     FROM observations o
@@ -180,7 +180,7 @@ public class AnalyzerService
                     WHERE o.service_date>=@start AND o.service_date<=@end";
         var parms = new List<(string, object?)> { ("@start", startDate), ("@end", endDate) };
         AppendStopFilter(ref sql, parms, stopId, feedId);
-        AppendFilters(ref sql, parms, route, timeFrom, timeTo);
+        AppendFilters(ref sql, parms, route, timeFrom, timeTo, headsign);
         AppendPastOnlyFilter(ref sql, parms);
 
         var raw = await QueryRawAsync(sql, parms, r => (
@@ -224,9 +224,10 @@ public class AnalyzerService
     }
 
     private static void AppendFilters(ref string sql, List<(string Name, object? Value)> parms,
-        string? route, int? timeFrom, int? timeTo)
+        string? route, int? timeFrom, int? timeTo, string? headsign = null)
     {
         if (!string.IsNullOrEmpty(route)) { sql += " AND t.route_short_name=@route"; parms.Add(("@route", route)); }
+        if (!string.IsNullOrEmpty(headsign)) { sql += " AND t.headsign=@headsign"; parms.Add(("@headsign", headsign)); }
         if (timeFrom.HasValue) { sql += " AND o.scheduled_departure>=@tf"; parms.Add(("@tf", timeFrom.Value)); }
         if (timeTo.HasValue) { sql += " AND o.scheduled_departure<=@tt"; parms.Add(("@tt", timeTo.Value)); }
     }
