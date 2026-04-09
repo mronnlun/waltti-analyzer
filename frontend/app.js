@@ -82,6 +82,7 @@ let currentPage = "dashboard";
 let hourlyChart = null;
 let stopSelect = null;
 let routeSelect = null;
+let headsignSelect = null;
 
 // Per-Route Breakdown sort state
 let routeSortCol = null;
@@ -149,6 +150,10 @@ async function renderDashboard(container) {
     routeSelect.destroy();
     routeSelect = null;
   }
+  if (headsignSelect) {
+    headsignSelect.destroy();
+    headsignSelect = null;
+  }
 
   container.innerHTML = `
     <h1>Dashboard</h1>
@@ -167,6 +172,10 @@ async function renderDashboard(container) {
           <label for="route-select">Route</label>
           <select id="route-select"></select>
         </div>
+        <div class="filter-row-headsign">
+          <label for="headsign-select">Headsign</label>
+          <select id="headsign-select"></select>
+        </div>
         <div class="filter-row-time">
           <label>Time from <input type="time" id="time-from"></label>
           <label>Time to <input type="time" id="time-to"></label>
@@ -183,6 +192,16 @@ async function renderDashboard(container) {
 
   routeSelect = new TomSelect("#route-select", {
     placeholder: "All routes",
+    plugins: ["clear_button"],
+    render: {
+      option: function (data, escape) {
+        return `<div class="option" title="${escape(data.text)}">${escape(data.text)}</div>`;
+      },
+    },
+  });
+
+  headsignSelect = new TomSelect("#headsign-select", {
+    placeholder: "All headsigns",
     plugins: ["clear_button"],
     render: {
       option: function (data, escape) {
@@ -243,6 +262,7 @@ async function loadDashboardData() {
   const from = document.getElementById("from-date").value;
   const to = document.getElementById("to-date").value;
   const route = routeSelect ? routeSelect.getValue() : "";
+  const headsign = headsignSelect ? headsignSelect.getValue() : "";
   const timeFrom = document.getElementById("time-from").value;
   const timeTo = document.getElementById("time-to").value;
 
@@ -257,6 +277,7 @@ async function loadDashboardData() {
   const params = new URLSearchParams({ from, to });
   if (!allStops) params.set("stop_id", stopId);
   if (route) params.set("route", route);
+  if (headsign) params.set("headsign", headsign);
   if (timeFrom) params.set("time_from", timeFrom);
   if (timeTo) params.set("time_to", timeTo);
 
@@ -264,12 +285,16 @@ async function loadDashboardData() {
     const routesEndpoint = allStops
       ? "routes"
       : `routes-for-stop?stop_id=${encodeURIComponent(stopId)}`;
-    const [summary, routes, hourly, observations, stopRoutes] = await Promise.all([
+    const headsignsEndpoint = allStops
+      ? "headsigns"
+      : `headsigns-for-stop?stop_id=${encodeURIComponent(stopId)}`;
+    const [summary, routes, hourly, observations, stopRoutes, stopHeadsigns] = await Promise.all([
       fetchJSON(`summary?${params}`),
       fetchJSON(`route-breakdown?${params}`),
       fetchJSON(`delay-by-hour?${params}`),
       fetchJSON(`observations?${params}`),
       fetchJSON(routesEndpoint),
+      fetchJSON(headsignsEndpoint),
     ]);
 
     // Update route selector
@@ -281,6 +306,18 @@ async function loadDashboardData() {
         routeSelect.setValue(currentRoute, true);
       } else {
         routeSelect.clear(true);
+      }
+    }
+
+    // Update headsign selector
+    if (headsignSelect) {
+      const currentHeadsign = headsignSelect.getValue();
+      headsignSelect.clearOptions();
+      headsignSelect.addOptions(stopHeadsigns.map((h) => ({ value: h, text: h })));
+      if (stopHeadsigns.includes(currentHeadsign)) {
+        headsignSelect.setValue(currentHeadsign, true);
+      } else {
+        headsignSelect.clear(true);
       }
     }
 

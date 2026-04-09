@@ -141,9 +141,26 @@ app.MapGet("/api/routes-for-stop", async (string? stop_id, DatabaseService db, I
     return Results.Ok(routes);
 });
 
+app.MapGet("/api/headsigns", async (DatabaseService db, IOptions<WalttiSettings> opts) =>
+{
+    var headsigns = await db.GetAllHeadsignsAsync(opts.Value.FeedId);
+    return Results.Ok(headsigns);
+});
+
+app.MapGet("/api/headsigns-for-stop", async (string? stop_id, DatabaseService db, IOptions<WalttiSettings> opts) =>
+{
+    if (string.IsNullOrEmpty(stop_id))
+    {
+        var allHeadsigns = await db.GetAllHeadsignsAsync(opts.Value.FeedId);
+        return Results.Ok(allHeadsigns);
+    }
+    var headsigns = await db.GetHeadsignsForStopAsync(stop_id);
+    return Results.Ok(headsigns);
+});
+
 app.MapGet("/api/observations", async (
     string? stop_id, string? date, string? from, string? to,
-    string? route, string? time_from, string? time_to,
+    string? route, string? time_from, string? time_to, string? headsign,
     DatabaseService db, AnalyzerService analyzer, IOptions<WalttiSettings> opts) =>
 {
     var startDate = from ?? date ?? "";
@@ -153,7 +170,7 @@ app.MapGet("/api/observations", async (
 
     var feedId = string.IsNullOrEmpty(stop_id) ? opts.Value.FeedId : null;
     var rows = await db.GetObservationsAsync(stop_id, startDate, endDate, route,
-        AnalyzerService.ParseTime(time_from), AnalyzerService.ParseTime(time_to), feedId);
+        AnalyzerService.ParseTime(time_from), AnalyzerService.ParseTime(time_to), feedId, headsign);
     return Results.Ok(rows);
 });
 
@@ -165,7 +182,7 @@ app.MapGet("/api/latest-observations", async (DatabaseService db, IOptions<Waltt
 
 app.MapGet("/api/summary", async (
     string? stop_id, string? from, string? to, string? route,
-    string? time_from, string? time_to,
+    string? time_from, string? time_to, string? headsign,
     AnalyzerService analyzer, IOptions<WalttiSettings> opts) =>
 {
     if (string.IsNullOrEmpty(from) || string.IsNullOrEmpty(to))
@@ -173,13 +190,13 @@ app.MapGet("/api/summary", async (
 
     var feedId = string.IsNullOrEmpty(stop_id) ? opts.Value.FeedId : null;
     var result = await analyzer.GetSummaryAsync(stop_id, from, to, route,
-        AnalyzerService.ParseTime(time_from), AnalyzerService.ParseTime(time_to), feedId);
+        AnalyzerService.ParseTime(time_from), AnalyzerService.ParseTime(time_to), feedId, headsign);
     return Results.Ok(result);
 });
 
 app.MapGet("/api/route-breakdown", async (
     string? stop_id, string? from, string? to, string? route,
-    string? time_from, string? time_to,
+    string? time_from, string? time_to, string? headsign,
     AnalyzerService analyzer, IOptions<WalttiSettings> opts) =>
 {
     if (string.IsNullOrEmpty(from) || string.IsNullOrEmpty(to))
@@ -187,13 +204,13 @@ app.MapGet("/api/route-breakdown", async (
 
     var feedId = string.IsNullOrEmpty(stop_id) ? opts.Value.FeedId : null;
     var result = await analyzer.GetRouteBreakdownAsync(stop_id, from, to, route,
-        AnalyzerService.ParseTime(time_from), AnalyzerService.ParseTime(time_to), feedId);
+        AnalyzerService.ParseTime(time_from), AnalyzerService.ParseTime(time_to), feedId, headsign);
     return Results.Ok(result);
 });
 
 app.MapGet("/api/delay-by-hour", async (
     string? stop_id, string? from, string? to, string? route,
-    string? time_from, string? time_to,
+    string? time_from, string? time_to, string? headsign,
     AnalyzerService analyzer, IOptions<WalttiSettings> opts) =>
 {
     if (string.IsNullOrEmpty(from) || string.IsNullOrEmpty(to))
@@ -201,7 +218,7 @@ app.MapGet("/api/delay-by-hour", async (
 
     var feedId = string.IsNullOrEmpty(stop_id) ? opts.Value.FeedId : null;
     var result = await analyzer.GetDelayByHourAsync(stop_id, from, to, route,
-        AnalyzerService.ParseTime(time_from), AnalyzerService.ParseTime(time_to), feedId);
+        AnalyzerService.ParseTime(time_from), AnalyzerService.ParseTime(time_to), feedId, headsign);
     return Results.Ok(result);
 });
 
