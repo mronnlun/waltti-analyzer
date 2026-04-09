@@ -83,6 +83,10 @@ let hourlyChart = null;
 let stopSelect = null;
 let routeSelect = null;
 
+// Per-Route Breakdown sort state
+let routeSortCol = null;
+let routeSortDir = "asc";
+
 const VALID_PAGES = ["dashboard", "observations", "stops"];
 
 function pageFromHash() {
@@ -330,23 +334,22 @@ function renderDashboardResults(summary, routes, hourly, observations, allStops 
 
   // Route breakdown
   if (routes.length > 0) {
-    html += `<div class="stats-section">
+    html += `<div class="stats-section" id="route-breakdown-section">
       <h2>Per-Route Breakdown</h2>
       <div class="table-responsive">
-      <table class="data-table" style="width:100%">
+      <table class="data-table" id="route-breakdown-table" style="width:100%">
         <thead><tr>
-          <th>Route</th><th>Deps</th><th>GPS</th><th>On-time %</th>
-          <th>Avg Late</th><th>Avg Early</th><th>Max Late</th><th>Suspect</th>
-        </tr></thead><tbody>`;
-    for (const r of routes) {
-      html += `<tr>
-        <td>${escapeHtml(r.route)}</td><td>${r.departures}</td><td>${r.with_realtime}</td>
-        <td>${r.on_time_pct}%</td><td>${formatDelay(r.avg_late_seconds)}</td>
-        <td>${formatDelay(r.avg_early_seconds)}</td><td>${formatDelay(r.max_late_seconds)}</td>
-        <td>${r.suspect_gps}</td>
-      </tr>`;
-    }
-    html += "</tbody></table></div></div>";
+          <th class="sortable" data-col="route">Route</th>
+          <th class="sortable" data-col="departures">Deps</th>
+          <th class="sortable" data-col="with_realtime">GPS</th>
+          <th class="sortable" data-col="on_time_pct">On-time %</th>
+          <th class="sortable" data-col="avg_late_seconds">Avg Late</th>
+          <th class="sortable" data-col="avg_early_seconds">Avg Early</th>
+          <th class="sortable" data-col="max_late_seconds">Max Late</th>
+          <th class="sortable" data-col="suspect_gps">Suspect</th>
+        </tr></thead>
+        <tbody id="route-breakdown-body"></tbody>
+      </table></div></div>`;
   }
 
   // Hourly chart
@@ -386,10 +389,62 @@ function renderDashboardResults(summary, routes, hourly, observations, allStops 
 
   el.innerHTML = html;
 
+  // Wire up Per-Route Breakdown sorting
+  if (routes.length > 0) {
+    renderRouteTableBody(routes);
+    document.querySelectorAll("#route-breakdown-table th.sortable").forEach((th) => {
+      th.addEventListener("click", () => {
+        const col = th.dataset.col;
+        if (routeSortCol === col) {
+          routeSortDir = routeSortDir === "asc" ? "desc" : "asc";
+        } else {
+          routeSortCol = col;
+          routeSortDir = "asc";
+        }
+        renderRouteTableBody(routes);
+      });
+    });
+  }
+
   // Render chart
   if (hourly.length > 0) {
     renderHourlyChart(hourly);
   }
+}
+
+function renderRouteTableBody(routes) {
+  const sorted = [...routes].sort((a, b) => {
+    if (routeSortCol === null) return 0;
+    const av = a[routeSortCol];
+    const bv = b[routeSortCol];
+    if (av == null && bv == null) return 0;
+    if (av == null) return 1;
+    if (bv == null) return -1;
+    const cmp = typeof av === "string" ? av.localeCompare(bv) : av - bv;
+    return routeSortDir === "asc" ? cmp : -cmp;
+  });
+
+  const tbody = document.getElementById("route-breakdown-body");
+  if (!tbody) return;
+
+  let html = "";
+  for (const r of sorted) {
+    html += `<tr>
+      <td>${escapeHtml(r.route)}</td><td>${r.departures}</td><td>${r.with_realtime}</td>
+      <td>${r.on_time_pct}%</td><td>${formatDelay(r.avg_late_seconds)}</td>
+      <td>${formatDelay(r.avg_early_seconds)}</td><td>${formatDelay(r.max_late_seconds)}</td>
+      <td>${r.suspect_gps}</td>
+    </tr>`;
+  }
+  tbody.innerHTML = html;
+
+  // Update header sort indicators
+  document.querySelectorAll("#route-breakdown-table th.sortable").forEach((th) => {
+    th.classList.remove("sort-asc", "sort-desc");
+    if (th.dataset.col === routeSortCol) {
+      th.classList.add(routeSortDir === "asc" ? "sort-asc" : "sort-desc");
+    }
+  });
 }
 
 function renderHourlyChart(data) {
