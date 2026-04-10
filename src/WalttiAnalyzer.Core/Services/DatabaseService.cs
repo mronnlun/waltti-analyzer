@@ -273,19 +273,17 @@ public class DatabaseService
         string startDate, string endDate, string? route = null,
         int? timeFrom = null, int? timeTo = null, string? feedId = null, string? headsign = null)
     {
-        var allStops = string.IsNullOrEmpty(stopId);
         var parms = new List<(string Name, object? Value)>
         {
             ("@start", startDate), ("@end", endDate)
         };
-        var selectCols = allStops ? $"SELECT {ObsColumns}, s.name AS stop_name" : $"SELECT {ObsColumns}";
-        var sql = $"{selectCols} {ObsJoins} WHERE o.service_date>=@start AND o.service_date<=@end";
+        var sql = $"SELECT {ObsColumns}, s.name AS stop_name {ObsJoins} WHERE o.service_date>=@start AND o.service_date<=@end";
         AppendStopFilter(ref sql, parms, stopId, feedId);
         AppendFilters(ref sql, parms, route, timeFrom, timeTo, headsign);
         AppendPastOnlyFilter(ref sql, parms);
         sql += " ORDER BY o.service_date DESC, o.scheduled_departure DESC";
         sql += IsSqlite ? " LIMIT 300" : " OFFSET 0 ROWS FETCH NEXT 300 ROWS ONLY";
-        return await ReadObservationsRawAsync(sql, parms, includeStopName: allStops);
+        return await ReadObservationsRawAsync(sql, parms, includeStopName: true);
     }
 
     public async Task<List<Observation>> GetLatestObservationsAsync(int limit = 300, string? feedId = null)

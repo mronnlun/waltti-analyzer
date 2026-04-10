@@ -404,7 +404,7 @@ function renderDashboardResults(summary, routes, hourly, observations, allStops 
       <div class="table-responsive">
       <table class="data-table" style="width:100%">
         <thead><tr>
-          <th>Date</th>${allStops ? "<th>Stop</th>" : ""}<th>Route</th><th>Headsign</th><th>Scheduled</th>
+          <th>Date</th><th>Stop</th><th>Route</th><th>Headsign</th><th>Scheduled</th>
           <th>Actual</th><th>Deviation</th><th>State</th><th>GPS</th>
         </tr></thead><tbody>`;
     for (const o of pastObservations) {
@@ -415,7 +415,7 @@ function renderDashboardResults(summary, routes, hourly, observations, allStops 
       const showDelay = o.realtime && !isSkipped;
       html += `<tr${cls}>
         <td>${escapeHtml(o.service_date)}</td>
-        ${allStops ? `<td>${escapeHtml(o.stop_name || o.stop_gtfs_id)}</td>` : ""}
+        <td>${escapeHtml(o.stop_name || o.stop_gtfs_id)}</td>
         <td>${escapeHtml(o.route_short_name || "")}</td>
         <td>${escapeHtml(o.headsign || "")}</td>
         <td>${formatTime(o.scheduled_departure)}</td>
