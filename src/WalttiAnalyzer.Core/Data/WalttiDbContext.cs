@@ -54,7 +54,10 @@ public class WalttiDbContext : DbContext
             e.HasData(
                 new RealtimeState { Id = 0, Name = "SCHEDULED" },
                 new RealtimeState { Id = 1, Name = "UPDATED" },
-                new RealtimeState { Id = 2, Name = "CANCELED" }
+                new RealtimeState { Id = 2, Name = "CANCELED" },
+                new RealtimeState { Id = 3, Name = "SKIPPED" },
+                new RealtimeState { Id = 4, Name = "ADDED" },
+                new RealtimeState { Id = 5, Name = "MODIFIED" }
             );
         });
 
