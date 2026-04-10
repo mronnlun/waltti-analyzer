@@ -365,6 +365,7 @@ function renderDashboardResults(summary, routes, hourly, observations, allStops 
       <tr><td>Slightly early (&lt;1 min)</td><td><strong>${summary.slightly_early}</strong></td></tr>
       <tr><td>Very early (&gt;1 min early)</td><td><strong>${summary.very_early}</strong></td></tr>
       <tr><td>Canceled</td><td><strong>${summary.canceled}</strong></td></tr>
+      <tr><td>Skipped</td><td><strong>${summary.skipped || 0}</strong></td></tr>
       <tr><td>Static only (no GPS)</td><td><strong>${summary.static_only}</strong></td></tr>
     </table>
   </div>`;
@@ -404,20 +405,23 @@ function renderDashboardResults(summary, routes, hourly, observations, allStops 
       <table class="data-table" style="width:100%">
         <thead><tr>
           <th>Date</th>${allStops ? "<th>Stop</th>" : ""}<th>Route</th><th>Headsign</th><th>Scheduled</th>
-          <th>Actual</th><th>Deviation</th><th>GPS</th>
+          <th>Actual</th><th>Deviation</th><th>State</th><th>GPS</th>
         </tr></thead><tbody>`;
     for (const o of pastObservations) {
       const isSuspect =
         o.departure_delay != null && Math.abs(o.departure_delay) > OUTLIER_THRESHOLD;
-      const cls = isSuspect ? ' class="suspect-row"' : "";
+      const isSkipped = o.realtime_state === "SKIPPED" || o.realtime_state === "CANCELED";
+      const cls = isSuspect || isSkipped ? ' class="suspect-row"' : "";
+      const showDelay = o.realtime && !isSkipped;
       html += `<tr${cls}>
         <td>${escapeHtml(o.service_date)}</td>
         ${allStops ? `<td>${escapeHtml(o.stop_name || o.stop_gtfs_id)}</td>` : ""}
         <td>${escapeHtml(o.route_short_name || "")}</td>
         <td>${escapeHtml(o.headsign || "")}</td>
         <td>${formatTime(o.scheduled_departure)}</td>
-        <td>${o.realtime ? formatTime(o.realtime_departure) : ""}</td>
-        <td>${o.realtime ? formatDelay(o.departure_delay) : ""}</td>
+        <td>${showDelay ? formatTime(o.realtime_departure) : ""}</td>
+        <td>${showDelay ? formatDelay(o.departure_delay) : ""}</td>
+        <td>${escapeHtml(o.realtime_state || "")}</td>
         <td>${o.realtime ? "✓" : ""}</td>
       </tr>`;
     }
@@ -558,20 +562,22 @@ async function renderObservations(container) {
       <table class="data-table" style="width:100%">
         <thead><tr>
           <th>Date</th><th>Stop</th><th>Route</th><th>Headsign</th>
-          <th>Scheduled</th><th>Actual</th><th>Deviation</th>
+          <th>Scheduled</th><th>Actual</th><th>Deviation</th><th>State</th>
         </tr></thead><tbody>`;
     for (const o of observations) {
       const isSuspect =
         o.departure_delay != null && Math.abs(o.departure_delay) > OUTLIER_THRESHOLD;
-      const cls = isSuspect ? ' class="suspect-row"' : "";
+      const isSkipped = o.realtime_state === "SKIPPED" || o.realtime_state === "CANCELED";
+      const cls = isSuspect || isSkipped ? ' class="suspect-row"' : "";
       html += `<tr${cls}>
         <td>${escapeHtml(o.service_date)}</td>
         <td>${escapeHtml(o.stop_name || o.stop_gtfs_id)}</td>
         <td>${escapeHtml(o.route_short_name || "")}</td>
         <td>${escapeHtml(o.headsign || "")}</td>
         <td>${formatTime(o.scheduled_departure)}</td>
-        <td>${formatTime(o.realtime_departure)}</td>
-        <td>${formatDelay(o.departure_delay)}</td>
+        <td>${isSkipped ? "" : formatTime(o.realtime_departure)}</td>
+        <td>${isSkipped ? "" : formatDelay(o.departure_delay)}</td>
+        <td>${escapeHtml(o.realtime_state || "")}</td>
       </tr>`;
     }
     html += "</tbody></table></div>";
