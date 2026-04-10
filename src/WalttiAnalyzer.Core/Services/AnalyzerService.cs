@@ -77,9 +77,15 @@ public class AnalyzerService
         int total = rows.Count;
         var withRealtime = rows.Where(r => r.realtime != 0).ToList();
         int canceled = rows.Count(r => r.state == "CANCELED");
+        int skipped = rows.Count(r => r.state == "SKIPPED");
         int staticOnly = total - withRealtime.Count;
 
-        var allDelays = withRealtime.Where(r => r.delay.HasValue).Select(r => r.delay!.Value).ToList();
+        // Exclude rows the producer explicitly flagged as non-measurements
+        // (CANCELED / SKIPPED); their delay values are not meaningful.
+        var allDelays = withRealtime
+            .Where(r => r.state != "CANCELED" && r.state != "SKIPPED")
+            .Where(r => r.delay.HasValue)
+            .Select(r => r.delay!.Value).ToList();
         var outliers = allDelays.Where(d => Math.Abs(d) > OutlierThreshold).ToList();
         var delays = allDelays.Where(d => Math.Abs(d) <= OutlierThreshold).ToList();
 
@@ -101,6 +107,7 @@ public class AnalyzerService
             ["with_realtime"] = withRealtime.Count,
             ["with_realtime_pct"] = total > 0 ? Math.Round((double)withRealtime.Count / total * 100, 1) : 0,
             ["canceled"] = canceled,
+            ["skipped"] = skipped,
             ["static_only"] = staticOnly,
             ["on_time"] = onTime,
             ["on_time_pct"] = delays.Count > 0 ? Math.Round((double)onTime / delays.Count * 100, 1) : 0,
@@ -121,10 +128,11 @@ public class AnalyzerService
         string startDate, string endDate, string? route = null,
         int? timeFrom = null, int? timeTo = null, string? feedId = null, string? headsign = null)
     {
-        var sql = @"SELECT t.route_short_name, o.departure_delay, o.realtime
+        var sql = @"SELECT t.route_short_name, o.departure_delay, o.realtime, rs.name AS realtime_state
                     FROM observations o
                     JOIN trips t ON o.trip_id=t.id
                     JOIN stops s ON o.stop_id=s.id
+                    LEFT JOIN realtime_states rs ON o.realtime_state_id=rs.id
                     WHERE o.service_date>=@start AND o.service_date<=@end";
         var parms = new List<(string, object?)> { ("@start", startDate), ("@end", endDate) };
         AppendStopFilter(ref sql, parms, stopId, feedId);
@@ -134,7 +142,8 @@ public class AnalyzerService
         var raw = await QueryRawAsync(sql, parms, r => (
             routeName: r.IsDBNull(0) ? "" : r.GetString(0),
             delay: r.IsDBNull(1) ? (int?)null : r.GetInt32(1),
-            realtime: r.GetInt32(2)
+            realtime: r.GetInt32(2),
+            state: r.IsDBNull(3) ? null : r.GetString(3)
         ));
 
         var byRoute = raw.GroupBy(r => r.routeName);
@@ -145,7 +154,9 @@ public class AnalyzerService
             var rr = grp.ToList();
             int totalCount = rr.Count;
             var rtRows = rr.Where(r => r.realtime != 0).ToList();
-            var allDelays = rtRows.Where(r => r.delay.HasValue).Select(r => r.delay!.Value).ToList();
+            var allDelays = rtRows
+                .Where(r => r.state != "CANCELED" && r.state != "SKIPPED")
+                .Where(r => r.delay.HasValue).Select(r => r.delay!.Value).ToList();
             var clean = allDelays.Where(d => Math.Abs(d) <= OutlierThreshold).ToList();
             int suspect = allDelays.Count - clean.Count;
             var late = clean.Where(d => d > 0).ToList();
@@ -173,10 +184,11 @@ public class AnalyzerService
         string startDate, string endDate, string? route = null,
         int? timeFrom = null, int? timeTo = null, string? feedId = null, string? headsign = null)
     {
-        var sql = @"SELECT (o.scheduled_departure / 3600) AS hour, o.departure_delay, o.realtime
+        var sql = @"SELECT (o.scheduled_departure / 3600) AS hour, o.departure_delay, o.realtime, rs.name AS realtime_state
                     FROM observations o
                     JOIN trips t ON o.trip_id=t.id
                     JOIN stops s ON o.stop_id=s.id
+                    LEFT JOIN realtime_states rs ON o.realtime_state_id=rs.id
                     WHERE o.service_date>=@start AND o.service_date<=@end";
         var parms = new List<(string, object?)> { ("@start", startDate), ("@end", endDate) };
         AppendStopFilter(ref sql, parms, stopId, feedId);
@@ -186,7 +198,8 @@ public class AnalyzerService
         var raw = await QueryRawAsync(sql, parms, r => (
             hour: r.GetInt32(0),
             delay: r.IsDBNull(1) ? (int?)null : r.GetInt32(1),
-            realtime: r.GetInt32(2)
+            realtime: r.GetInt32(2),
+            state: r.IsDBNull(3) ? null : r.GetString(3)
         ));
 
         var result = new List<Dictionary<string, object?>>();
@@ -194,7 +207,9 @@ public class AnalyzerService
         {
             var rr = grp.ToList();
             var rtRows = rr.Where(r => r.realtime != 0).ToList();
-            var allDelays = rtRows.Where(r => r.delay.HasValue).Select(r => r.delay!.Value).ToList();
+            var allDelays = rtRows
+                .Where(r => r.state != "CANCELED" && r.state != "SKIPPED")
+                .Where(r => r.delay.HasValue).Select(r => r.delay!.Value).ToList();
             var clean = allDelays.Where(d => Math.Abs(d) <= OutlierThreshold).ToList();
             var late = clean.Where(d => d > 0).ToList();
             var early = clean.Where(d => d < 0).ToList();
