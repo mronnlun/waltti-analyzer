@@ -113,9 +113,9 @@ app.MapHealthChecks("/health");
 app.MapGet("/api/status", async (DatabaseService db, IOptions<WalttiSettings> opts) =>
 {
     var s = opts.Value;
-    var daily = await db.GetLatestCollectionAsync(s.FeedId, "daily");
+    var discover = await db.GetLatestCollectionAsync(s.FeedId, "discover");
     var realtime = await db.GetLatestCollectionAsync(s.FeedId, "realtime");
-    return Results.Ok(new { feed_id = s.FeedId, default_stop_id = s.DefaultStopId, last_daily = daily, last_realtime = realtime });
+    return Results.Ok(new { feed_id = s.FeedId, default_stop_id = s.DefaultStopId, last_discover = discover, last_realtime = realtime });
 });
 
 app.MapGet("/api/stops", async (DatabaseService db, IOptions<WalttiSettings> opts) =>
@@ -169,7 +169,9 @@ app.MapGet("/api/observations", async (
         return Results.BadRequest(new { error = "date or from/to parameters required" });
 
     var feedId = string.IsNullOrEmpty(stop_id) ? opts.Value.FeedId : null;
-    var rows = await db.GetObservationsAsync(stop_id, startDate, endDate, route,
+    int start = AnalyzerService.ParseDateToInt(startDate);
+    int end = AnalyzerService.ParseDateToInt(endDate);
+    var rows = await db.GetObservationsAsync(stop_id, start, end, route,
         AnalyzerService.ParseTime(time_from), AnalyzerService.ParseTime(time_to), feedId, headsign);
     return Results.Ok(rows);
 });
@@ -222,30 +224,9 @@ app.MapGet("/api/delay-by-hour", async (
     return Results.Ok(result);
 });
 
-app.MapPost("/api/collect/daily", async (
-    System.Text.Json.JsonElement? body,
-    CollectorService collector) =>
+app.MapPost("/api/collect/poll", async (CollectorService collector) =>
 {
-    string? dateStr = null, stopId = null;
-    if (body.HasValue && body.Value.ValueKind == System.Text.Json.JsonValueKind.Object)
-    {
-        if (body.Value.TryGetProperty("date", out var d)) dateStr = d.GetString();
-        if (body.Value.TryGetProperty("stop_id", out var s)) stopId = s.GetString();
-    }
-    var result = await collector.CollectDailyAsync(stopId, dateStr);
-    return Results.Ok(result);
-});
-
-app.MapPost("/api/collect/realtime", async (
-    System.Text.Json.JsonElement? body,
-    CollectorService collector) =>
-{
-    string? stopId = null;
-    if (body.HasValue && body.Value.ValueKind == System.Text.Json.JsonValueKind.Object)
-    {
-        if (body.Value.TryGetProperty("stop_id", out var s)) stopId = s.GetString();
-    }
-    var result = await collector.PollRealtimeOnceAsync(stopId);
+    var result = await collector.PollSlidingWindowAsync();
     return Results.Ok(result);
 });
 

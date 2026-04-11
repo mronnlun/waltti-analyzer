@@ -33,7 +33,7 @@ public class DatabaseTests : IDisposable
     {
         await EnsureTripAsync("Vaasa:trip1");
         await _fixture.Db.UpsertObservationsBatchAsync([MakeObs("Vaasa:trip1")]);
-        var rows = await _fixture.Db.GetObservationsAsync("Vaasa:309392", "2026-04-02", "2026-04-02");
+        var rows = await _fixture.Db.GetObservationsAsync("Vaasa:309392", 20260402, 20260402);
         Assert.Single(rows);
         Assert.Equal("3", rows[0].RouteShortName);
     }
@@ -45,48 +45,44 @@ public class DatabaseTests : IDisposable
         var obs = MakeObs("Vaasa:trip1");
         await _fixture.Db.UpsertObservationsBatchAsync([obs]);
 
-        // Update with realtime data
-        obs["realtime"] = 1;
+        // Update with measured data (delay_source=2 beats 0)
+        obs["delay_source"] = 2;
         obs["departure_delay"] = 120;
-        obs["realtime_departure"] = 24220;
         obs["realtime_state"] = "UPDATED";
         await _fixture.Db.UpsertObservationsBatchAsync([obs]);
 
-        var rows = await _fixture.Db.GetObservationsAsync("Vaasa:309392", "2026-04-02", "2026-04-02");
+        var rows = await _fixture.Db.GetObservationsAsync("Vaasa:309392", 20260402, 20260402);
         Assert.Single(rows);
-        Assert.Equal(1, rows[0].Realtime);
+        Assert.Equal(2, rows[0].DelaySource);
         Assert.Equal(120, rows[0].DepartureDelay);
     }
 
     [Fact]
-    public async Task UpsertObservationPreservesRealtimeWhenOverwrittenWithStatic()
+    public async Task UpsertObservationPreservesMeasuredWhenOverwrittenWithScheduled()
     {
         await EnsureTripAsync("Vaasa:trip1");
 
-        // First upsert: static schedule only
+        // First upsert: scheduled data
         var obs = MakeObs("Vaasa:trip1");
         await _fixture.Db.UpsertObservationsBatchAsync([obs]);
 
-        // Second upsert: realtime data captured
-        obs["realtime"] = 1;
+        // Second upsert: measured data captured
+        obs["delay_source"] = 2;
         obs["departure_delay"] = 90;
-        obs["realtime_departure"] = 24190;
         obs["realtime_state"] = "UPDATED";
         await _fixture.Db.UpsertObservationsBatchAsync([obs]);
 
-        // Third upsert: daily collection re-runs and API returns realtime=false for past departure
-        obs["realtime"] = 0;
+        // Third upsert: try to overwrite with scheduled data (delay_source=0)
+        obs["delay_source"] = 0;
         obs["departure_delay"] = 0;
-        obs["realtime_departure"] = null;
         obs["realtime_state"] = "SCHEDULED";
         await _fixture.Db.UpsertObservationsBatchAsync([obs]);
 
-        // Realtime data captured in second upsert should be preserved
-        var rows = await _fixture.Db.GetObservationsAsync("Vaasa:309392", "2026-04-02", "2026-04-02");
+        // Measured data should be preserved (delay_source=2 > 0)
+        var rows = await _fixture.Db.GetObservationsAsync("Vaasa:309392", 20260402, 20260402);
         Assert.Single(rows);
-        Assert.Equal(1, rows[0].Realtime);
+        Assert.Equal(2, rows[0].DelaySource);
         Assert.Equal(90, rows[0].DepartureDelay);
-        Assert.Equal(24190, rows[0].RealtimeDeparture);
     }
 
     [Fact]
@@ -95,9 +91,7 @@ public class DatabaseTests : IDisposable
         var trips = Enumerable.Range(0, 5).Select(i => new Dictionary<string, object?>
         {
             ["gtfs_id"] = $"Vaasa:trip{i}",
-            ["route_short_name"] = "3",
-            ["route_long_name"] = "Gerby - Keskusta",
-            ["mode"] = "BUS",
+            ["route_gtfs_id"] = "Vaasa:3",
             ["headsign"] = "Keskusta",
             ["direction_id"] = 1,
         }).ToList();
@@ -108,7 +102,7 @@ public class DatabaseTests : IDisposable
             .ToList();
         await _fixture.Db.UpsertObservationsBatchAsync(observations);
 
-        var rows = await _fixture.Db.GetObservationsAsync("Vaasa:309392", "2026-04-02", "2026-04-02");
+        var rows = await _fixture.Db.GetObservationsAsync("Vaasa:309392", 20260402, 20260402);
         Assert.Equal(5, rows.Count);
     }
 
@@ -118,28 +112,24 @@ public class DatabaseTests : IDisposable
         await _fixture.Db.UpsertTripsBatchAsync([new Dictionary<string, object?>
         {
             ["gtfs_id"] = "Vaasa:trip_hs_a",
-            ["route_short_name"] = "3",
-            ["route_long_name"] = "Gerby - Keskusta",
-            ["mode"] = "BUS",
+            ["route_gtfs_id"] = "Vaasa:3",
             ["headsign"] = "Keskusta",
             ["direction_id"] = 1,
         }]);
         await _fixture.Db.UpsertTripsBatchAsync([new Dictionary<string, object?>
         {
             ["gtfs_id"] = "Vaasa:trip_hs_b",
-            ["route_short_name"] = "3",
-            ["route_long_name"] = "Gerby - Keskusta",
-            ["mode"] = "BUS",
+            ["route_gtfs_id"] = "Vaasa:3",
             ["headsign"] = "Gerby",
             ["direction_id"] = 0,
         }]);
         await _fixture.Db.UpsertObservationsBatchAsync([MakeObs("Vaasa:trip_hs_a")]);
         await _fixture.Db.UpsertObservationsBatchAsync([MakeObs("Vaasa:trip_hs_b", scheduledDep: 25000)]);
 
-        var all = await _fixture.Db.GetObservationsAsync("Vaasa:309392", "2026-04-02", "2026-04-02");
+        var all = await _fixture.Db.GetObservationsAsync("Vaasa:309392", 20260402, 20260402);
         Assert.Equal(2, all.Count);
 
-        var filtered = await _fixture.Db.GetObservationsAsync("Vaasa:309392", "2026-04-02", "2026-04-02", headsign: "Keskusta");
+        var filtered = await _fixture.Db.GetObservationsAsync("Vaasa:309392", 20260402, 20260402, headsign: "Keskusta");
         Assert.Single(filtered);
         Assert.Equal("Keskusta", filtered[0].Headsign);
     }
@@ -147,15 +137,15 @@ public class DatabaseTests : IDisposable
     [Fact]
     public async Task GetObservationsWithRouteFilter()
     {
-        await EnsureTripAsync("Vaasa:trip_a", "3");
-        await EnsureTripAsync("Vaasa:trip_b", "9");
+        await EnsureTripAsync("Vaasa:trip_a", "Vaasa:3");
+        await EnsureTripAsync("Vaasa:trip_b", "Vaasa:9");
         await _fixture.Db.UpsertObservationsBatchAsync([MakeObs("Vaasa:trip_a")]);
         await _fixture.Db.UpsertObservationsBatchAsync([MakeObs("Vaasa:trip_b")]);
 
-        var all = await _fixture.Db.GetObservationsAsync("Vaasa:309392", "2026-04-02", "2026-04-02");
+        var all = await _fixture.Db.GetObservationsAsync("Vaasa:309392", 20260402, 20260402);
         Assert.Equal(2, all.Count);
 
-        var route3 = await _fixture.Db.GetObservationsAsync("Vaasa:309392", "2026-04-02", "2026-04-02", route: "3");
+        var route3 = await _fixture.Db.GetObservationsAsync("Vaasa:309392", 20260402, 20260402, route: "3");
         Assert.Single(route3);
         Assert.Equal("3", route3[0].RouteShortName);
     }
@@ -179,36 +169,29 @@ public class DatabaseTests : IDisposable
     // Helpers
     // -----------------------------------------------------------------------
 
-    private async Task EnsureTripAsync(string tripId, string route = "3")
+    private async Task EnsureTripAsync(string tripId, string routeGtfsId = "Vaasa:3")
     {
         await _fixture.Db.UpsertTripsBatchAsync([new Dictionary<string, object?>
         {
             ["gtfs_id"] = tripId,
-            ["route_short_name"] = route,
-            ["route_long_name"] = "Gerby - Keskusta",
-            ["mode"] = "BUS",
+            ["route_gtfs_id"] = routeGtfsId,
             ["headsign"] = "Keskusta",
             ["direction_id"] = 1,
         }]);
     }
 
     private static Dictionary<string, object?> MakeObs(string tripId,
-        int scheduledDep = 24100, int delay = 0, int realtime = 0)
+        int scheduledDep = 24100, int delay = 0, int delaySource = 0)
     {
         return new Dictionary<string, object?>
         {
             ["stop_gtfs_id"] = "Vaasa:309392",
             ["trip_gtfs_id"] = tripId,
-            ["service_date"] = "2026-04-02",
-            ["scheduled_arrival"] = 24000,
+            ["service_date"] = 20260402,
             ["scheduled_departure"] = scheduledDep,
-            ["realtime_arrival"] = null,
-            ["realtime_departure"] = null,
-            ["arrival_delay"] = delay,
             ["departure_delay"] = delay,
-            ["realtime"] = realtime,
+            ["delay_source"] = delaySource,
             ["realtime_state"] = "SCHEDULED",
-            ["queried_at"] = DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
         };
     }
 }

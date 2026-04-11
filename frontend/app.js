@@ -36,6 +36,14 @@ function escapeHtml(str) {
   return el.innerHTML;
 }
 
+/** Format int YYYYMMDD as "YYYY-MM-DD" for display. */
+function formatServiceDate(dateInt) {
+  if (dateInt == null) return "";
+  const s = String(dateInt);
+  if (s.length !== 8) return s;
+  return `${s.slice(0, 4)}-${s.slice(4, 6)}-${s.slice(6, 8)}`;
+}
+
 function todayStr() {
   return new Date().toISOString().slice(0, 10);
 }
@@ -48,12 +56,27 @@ function daysAgo(n) {
 
 const OUTLIER_THRESHOLD = 1800;
 
+/** Delay source labels: 0=SCHEDULED, 1=PROPAGATED, 2=MEASURED */
+function delaySourceLabel(ds) {
+  if (ds === 2) return "M";
+  if (ds === 1) return "P";
+  return "";
+}
+
+function delaySourceTitle(ds) {
+  if (ds === 2) return "Measured";
+  if (ds === 1) return "Propagated";
+  return "Scheduled";
+}
+
 function isDeparturePast(o) {
   const now = new Date();
   const todayHelsinki = now.toLocaleDateString("sv", { timeZone: "Europe/Helsinki" });
+  // Convert "YYYY-MM-DD" to YYYYMMDD int for comparison with service_date int
+  const todayInt = parseInt(todayHelsinki.replace(/-/g, ""), 10);
 
-  if (o.service_date < todayHelsinki) return true;
-  if (o.service_date > todayHelsinki) return false;
+  if (o.service_date < todayInt) return true;
+  if (o.service_date > todayInt) return false;
 
   // Same date as today — compare seconds since midnight in Helsinki time
   const parts = new Intl.DateTimeFormat("en", {
@@ -68,10 +91,7 @@ function isDeparturePast(o) {
     parseInt(parts.find((p) => p.type === "minute").value) * 60 +
     parseInt(parts.find((p) => p.type === "second").value);
 
-  const scheduledPast = o.scheduled_departure != null && o.scheduled_departure <= nowSecs;
-  const actualPast =
-    o.realtime && o.realtime_departure != null && o.realtime_departure <= nowSecs;
-  return scheduledPast || actualPast;
+  return o.scheduled_departure != null && o.scheduled_departure <= nowSecs;
 }
 
 // ---------------------------------------------------------------------------
@@ -344,15 +364,15 @@ function renderDashboardResults(summary, routes, hourly, observations, allStops 
     <div class="card"><div class="card-value">${summary.on_time_pct}%</div><div class="card-label">On Time</div></div>
     <div class="card"><div class="card-value">${formatDelay(summary.avg_late_seconds)}</div><div class="card-label">Avg Late</div></div>
     <div class="card"><div class="card-value">${formatDelay(summary.avg_early_seconds)}</div><div class="card-label">Avg Early</div></div>
-    <div class="card"><div class="card-value">${summary.with_realtime_pct}%</div><div class="card-label">GPS Tracking</div></div>
+    <div class="card"><div class="card-value">${summary.measured_pct}%</div><div class="card-label">Measured</div></div>
   </div>`;
 
   // Warnings
-  if (summary.with_realtime_pct < 50) {
-    html += `<div class="warning">⚠ Only ${summary.with_realtime_pct}% of departures have GPS data. Statistics may not be representative.</div>`;
+  if (summary.measured_pct < 50) {
+    html += `<div class="warning">Only ${summary.measured_pct}% of departures have measured GPS data. Statistics may not be representative.</div>`;
   }
   if (summary.suspect_gps > 0) {
-    html += `<div class="warning">⚠ ${summary.suspect_gps} observations have suspect GPS data (>30 min deviation) and are excluded from statistics.</div>`;
+    html += `<div class="warning">${summary.suspect_gps} observations have suspect GPS data (>30 min deviation) and are excluded from statistics.</div>`;
   }
 
   // Timeliness breakdown
@@ -366,6 +386,7 @@ function renderDashboardResults(summary, routes, hourly, observations, allStops 
       <tr><td>Very early (&gt;1 min early)</td><td><strong>${summary.very_early}</strong></td></tr>
       <tr><td>Canceled</td><td><strong>${summary.canceled}</strong></td></tr>
       <tr><td>Skipped</td><td><strong>${summary.skipped || 0}</strong></td></tr>
+      <tr><td>Propagated (estimated)</td><td><strong>${summary.propagated || 0}</strong></td></tr>
       <tr><td>Static only (no GPS)</td><td><strong>${summary.static_only}</strong></td></tr>
     </table>
   </div>`;
@@ -379,7 +400,7 @@ function renderDashboardResults(summary, routes, hourly, observations, allStops 
         <thead><tr>
           <th class="sortable" data-col="route">Route</th>
           <th class="sortable" data-col="departures">Deps</th>
-          <th class="sortable" data-col="with_realtime">GPS</th>
+          <th class="sortable" data-col="measured">Measured</th>
           <th class="sortable" data-col="on_time_pct">On-time %</th>
           <th class="sortable" data-col="avg_late_seconds">Avg Late</th>
           <th class="sortable" data-col="avg_early_seconds">Avg Early</th>
@@ -405,24 +426,28 @@ function renderDashboardResults(summary, routes, hourly, observations, allStops 
       <table class="data-table" style="width:100%">
         <thead><tr>
           <th>Date</th>${allStops ? "<th>Stop</th>" : ""}<th>Route</th><th>Headsign</th><th>Scheduled</th>
-          <th>Actual</th><th>Deviation</th><th>State</th><th>GPS</th>
+          <th>Actual</th><th>Deviation</th><th>State</th><th>Source</th>
         </tr></thead><tbody>`;
     for (const o of pastObservations) {
       const isSuspect =
         o.departure_delay != null && Math.abs(o.departure_delay) > OUTLIER_THRESHOLD;
       const isSkipped = o.realtime_state === "SKIPPED" || o.realtime_state === "CANCELED";
+      const hasMeasurement = o.delay_source >= 1;
       const cls = isSuspect || isSkipped ? ' class="suspect-row"' : "";
-      const showDelay = o.realtime && !isSkipped;
+      const showDelay = hasMeasurement && !isSkipped;
+      const actualTime = showDelay && o.departure_delay != null
+        ? o.scheduled_departure + o.departure_delay
+        : null;
       html += `<tr${cls}>
-        <td>${escapeHtml(o.service_date)}</td>
+        <td>${formatServiceDate(o.service_date)}</td>
         ${allStops ? `<td>${escapeHtml(o.stop_name || o.stop_gtfs_id)}</td>` : ""}
         <td>${escapeHtml(o.route_short_name || "")}</td>
         <td>${escapeHtml(o.headsign || "")}</td>
         <td>${formatTime(o.scheduled_departure)}</td>
-        <td>${showDelay ? formatTime(o.realtime_departure) : ""}</td>
+        <td>${showDelay ? formatTime(actualTime) : ""}</td>
         <td>${showDelay ? formatDelay(o.departure_delay) : ""}</td>
         <td>${escapeHtml(o.realtime_state || "")}</td>
-        <td>${o.realtime ? "✓" : ""}</td>
+        <td title="${delaySourceTitle(o.delay_source)}">${delaySourceLabel(o.delay_source)}</td>
       </tr>`;
     }
     html += "</tbody></table></div></div>";
@@ -471,7 +496,7 @@ function renderRouteTableBody(routes) {
   let html = "";
   for (const r of sorted) {
     html += `<tr>
-      <td>${escapeHtml(r.route)}</td><td>${r.departures}</td><td>${r.with_realtime}</td>
+      <td>${escapeHtml(r.route)}</td><td>${r.departures}</td><td>${r.measured}</td>
       <td>${r.on_time_pct}%</td><td>${formatDelay(r.avg_late_seconds)}</td>
       <td>${formatDelay(r.avg_early_seconds)}</td><td>${formatDelay(r.max_late_seconds)}</td>
       <td>${r.suspect_gps}</td>
@@ -562,22 +587,28 @@ async function renderObservations(container) {
       <table class="data-table" style="width:100%">
         <thead><tr>
           <th>Date</th><th>Stop</th><th>Route</th><th>Headsign</th>
-          <th>Scheduled</th><th>Actual</th><th>Deviation</th><th>State</th>
+          <th>Scheduled</th><th>Actual</th><th>Deviation</th><th>State</th><th>Source</th>
         </tr></thead><tbody>`;
     for (const o of observations) {
       const isSuspect =
         o.departure_delay != null && Math.abs(o.departure_delay) > OUTLIER_THRESHOLD;
       const isSkipped = o.realtime_state === "SKIPPED" || o.realtime_state === "CANCELED";
+      const hasMeasurement = o.delay_source >= 1;
       const cls = isSuspect || isSkipped ? ' class="suspect-row"' : "";
+      const showDelay = hasMeasurement && !isSkipped;
+      const actualTime = showDelay && o.departure_delay != null
+        ? o.scheduled_departure + o.departure_delay
+        : null;
       html += `<tr${cls}>
-        <td>${escapeHtml(o.service_date)}</td>
+        <td>${formatServiceDate(o.service_date)}</td>
         <td>${escapeHtml(o.stop_name || o.stop_gtfs_id)}</td>
         <td>${escapeHtml(o.route_short_name || "")}</td>
         <td>${escapeHtml(o.headsign || "")}</td>
         <td>${formatTime(o.scheduled_departure)}</td>
-        <td>${isSkipped ? "" : formatTime(o.realtime_departure)}</td>
-        <td>${isSkipped ? "" : formatDelay(o.departure_delay)}</td>
+        <td>${showDelay ? formatTime(actualTime) : ""}</td>
+        <td>${showDelay ? formatDelay(o.departure_delay) : ""}</td>
         <td>${escapeHtml(o.realtime_state || "")}</td>
+        <td title="${delaySourceTitle(o.delay_source)}">${delaySourceLabel(o.delay_source)}</td>
       </tr>`;
     }
     html += "</tbody></table></div>";

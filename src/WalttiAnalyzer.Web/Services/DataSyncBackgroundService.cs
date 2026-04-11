@@ -7,8 +7,8 @@ using WalttiAnalyzer.Core.Services;
 namespace WalttiAnalyzer.Web.Services;
 
 /// <summary>
-/// Runs data synchronization on startup and then every 10 minutes.
-/// Performs stop discovery, daily scheduled collection, and realtime polling.
+/// Runs data synchronization on startup and then every 3 minutes.
+/// Performs stop/route discovery and sliding-window realtime polling.
 /// </summary>
 public class DataSyncBackgroundService : BackgroundService
 {
@@ -24,6 +24,9 @@ public class DataSyncBackgroundService : BackgroundService
     /// <summary>Minimum minutes between stop discovery runs within the same day.</summary>
     private const int DiscoveryIntervalMinutes = 50;
 
+    /// <summary>Tracks the last poll time so the sliding window overlaps correctly.</summary>
+    private long? _lastPollUnixUtc;
+
     public DataSyncBackgroundService(IServiceScopeFactory scopeFactory,
         ILogger<DataSyncBackgroundService> logger, IOptions<WalttiSettings> settings)
     {
@@ -34,10 +37,10 @@ public class DataSyncBackgroundService : BackgroundService
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        // Run immediately on startup then repeat every 10 minutes.
+        // Run immediately on startup then repeat every 3 minutes.
         await RunSyncCycleAsync(stoppingToken);
 
-        using var timer = new PeriodicTimer(TimeSpan.FromMinutes(10));
+        using var timer = new PeriodicTimer(TimeSpan.FromMinutes(3));
         while (await timer.WaitForNextTickAsync(stoppingToken))
             await RunSyncCycleAsync(stoppingToken);
     }
@@ -63,7 +66,7 @@ public class DataSyncBackgroundService : BackgroundService
             var now = TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, HelsinkiTz);
             var feedId = _settings.FeedId;
 
-            // Stop discovery: once per hour (at top of hour), or immediately if never done today
+            // Stop/route discovery: once per hour (at top of hour), or immediately if never done today
             bool shouldDiscover;
             var lastDiscovery = await db.GetLatestCollectionAsync(feedId, "discover");
             if (lastDiscovery == null)
@@ -79,29 +82,25 @@ public class DataSyncBackgroundService : BackgroundService
 
             if (shouldDiscover)
             {
-                _logger.LogInformation("Running stop discovery");
+                _logger.LogInformation("Running stop/route discovery");
                 using var discoverActivity = ActivitySource.StartActivity("DiscoverStops");
                 var stops = await collector.DiscoverStopsAsync();
                 discoverActivity?.SetTag("result.status", stops.GetValueOrDefault("status"));
                 _logger.LogInformation("Discovery result: {@Result}", stops);
             }
 
-            _logger.LogInformation("Running daily collection");
-            using (var dailyActivity = ActivitySource.StartActivity("CollectDaily"))
+            // Sliding window realtime poll
+            _logger.LogInformation("Running sliding window poll (lastPoll={LastPoll})", _lastPollUnixUtc);
+            using (var pollActivity = ActivitySource.StartActivity("PollSlidingWindow"))
             {
-                var daily = await collector.CollectDailyAsync();
-                dailyActivity?.SetTag("result.status", daily.GetValueOrDefault("status"));
-                dailyActivity?.SetTag("result.departures", daily.GetValueOrDefault("departures"));
-                _logger.LogInformation("Daily collection result: {@Result}", daily);
-            }
+                var beforePoll = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+                var result = await collector.PollSlidingWindowAsync(_lastPollUnixUtc);
+                _lastPollUnixUtc = beforePoll;
 
-            _logger.LogInformation("Running realtime poll");
-            using (var realtimeActivity = ActivitySource.StartActivity("PollRealtime"))
-            {
-                var realtime = await collector.PollRealtimeOnceAsync();
-                realtimeActivity?.SetTag("result.status", realtime.GetValueOrDefault("status"));
-                realtimeActivity?.SetTag("result.updated", realtime.GetValueOrDefault("updated"));
-                _logger.LogInformation("Realtime poll result: {@Result}", realtime);
+                pollActivity?.SetTag("result.status", result.GetValueOrDefault("status"));
+                pollActivity?.SetTag("result.measured", result.GetValueOrDefault("measured"));
+                pollActivity?.SetTag("result.propagated", result.GetValueOrDefault("propagated"));
+                _logger.LogInformation("Sliding window poll result: {@Result}", result);
             }
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)

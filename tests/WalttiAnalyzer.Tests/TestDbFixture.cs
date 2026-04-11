@@ -28,8 +28,10 @@ public class TestDbFixture : IDisposable
 
         Db = new DatabaseService(Context, NullLogger<DatabaseService>.Instance);
 
-        // Seed default test stop
+        // Seed default test stop and a default route
         Db.UpsertStopAsync("Vaasa:309392", "Gerbynmäentie", null, 63.14, 21.57).GetAwaiter().GetResult();
+        Db.UpsertRouteAsync("Vaasa:3", "3", "Gerby - Keskusta", "BUS").GetAwaiter().GetResult();
+        Db.UpsertRouteAsync("Vaasa:9", "9", "Route 9", "BUS").GetAwaiter().GetResult();
     }
 
     public void Dispose()
