@@ -90,11 +90,14 @@ infra/
 
 | Variable | Default | Required |
 |---|---|---|
-| `DIGITRANSIT_API_KEY` | — | Yes |
+| `DIGITRANSIT_API_KEY` | — | Yes (fallback) |
+| `DIGITRANSIT_SESSION_TOKEN` | — | No (used first if set) |
 | `DIGITRANSIT_API_URL` | `https://api.digitransit.fi/routing/v2/waltti/gtfs/v1` | No |
 | `FEED_ID` | `Vaasa` | No |
 | `DEFAULT_STOP_ID` | `Vaasa:309392` | No |
 | `DATABASE_PATH` | `data/waltti.db` | No (local SQLite only) |
+
+Auth uses `digitransit-subscription-key`. If `DIGITRANSIT_SESSION_TOKEN` is set it is tried first per request; on HTTP 500 the client falls back to `DIGITRANSIT_API_KEY` automatically.
 
 **Database per environment — never confuse these:**
 - **Local development**: SQLite only. `WalttiDbContext` uses `UseSqlite(DatabasePath)`. No extra setup required.

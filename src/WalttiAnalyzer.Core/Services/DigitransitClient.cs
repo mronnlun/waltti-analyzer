@@ -1,6 +1,8 @@
 using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
+using WalttiAnalyzer.Core.Models;
 
 namespace WalttiAnalyzer.Core.Services;
 
@@ -8,14 +10,18 @@ public class DigitransitClient
 {
     private readonly HttpClient _httpClient;
     private readonly ILogger<DigitransitClient> _logger;
+    private readonly string _sessionToken;
+    private readonly string _apiKey;
 
     private static readonly TimeZoneInfo HelsinkiTz =
         TimeZoneInfo.FindSystemTimeZoneById("Europe/Helsinki");
 
-    public DigitransitClient(HttpClient httpClient, ILogger<DigitransitClient> logger)
+    public DigitransitClient(HttpClient httpClient, IOptions<WalttiSettings> settings, ILogger<DigitransitClient> logger)
     {
         _httpClient = httpClient;
         _logger = logger;
+        _sessionToken = settings.Value.DigitransitSessionToken;
+        _apiKey = settings.Value.DigitransitApiKey;
     }
 
     // -----------------------------------------------------------------------
@@ -139,16 +145,50 @@ public class DigitransitClient
     // Internal
     // -----------------------------------------------------------------------
 
+    /// <summary>
+    /// Returns the ordered list of auth tokens to try: session token first (if configured),
+    /// then API key (if configured). Empty string means "no auth header".
+    /// </summary>
+    private List<string> GetTokensToTry()
+    {
+        var tokens = new List<string>();
+        if (!string.IsNullOrEmpty(_sessionToken)) tokens.Add(_sessionToken);
+        if (!string.IsNullOrEmpty(_apiKey)) tokens.Add(_apiKey);
+        if (tokens.Count == 0) tokens.Add(""); // no auth
+        return tokens;
+    }
+
     private async Task<JsonElement> QueryAsync(string graphql, int retries = 1, int timeoutSeconds = 30)
     {
+        var tokens = GetTokensToTry();
+        int tokenIndex = 0;
+
         for (int attempt = 0; attempt <= retries; attempt++)
         {
+            var currentToken = tokens[tokenIndex];
             try
             {
                 var body = JsonSerializer.Serialize(new { query = graphql });
                 var content = new StringContent(body, Encoding.UTF8, "application/json");
+                using var request = new HttpRequestMessage(HttpMethod.Post, "");
+                request.Content = content;
+                if (!string.IsNullOrEmpty(currentToken))
+                    request.Headers.Add("digitransit-subscription-key", currentToken);
+
                 using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(timeoutSeconds));
-                var resp = await _httpClient.PostAsync("", content, cts.Token);
+                var resp = await _httpClient.SendAsync(request, cts.Token);
+
+                if (resp.StatusCode == System.Net.HttpStatusCode.InternalServerError && tokenIndex < tokens.Count - 1)
+                {
+                    var errText = await resp.Content.ReadAsStringAsync();
+                    _logger.LogWarning("API 500 with {TokenType} token (attempt {Attempt}), falling back to next token. Body: {Text}",
+                        tokenIndex == 0 && !string.IsNullOrEmpty(_sessionToken) ? "session" : "API",
+                        attempt + 1,
+                        errText[..Math.Min(errText.Length, 500)]);
+                    tokenIndex++;
+                    continue;
+                }
+
                 if (!resp.IsSuccessStatusCode)
                 {
                     var text = await resp.Content.ReadAsStringAsync();

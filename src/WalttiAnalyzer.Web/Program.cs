@@ -46,8 +46,7 @@ builder.Services.AddHttpClient<DigitransitClient>((sp, client) =>
 {
     var s = sp.GetRequiredService<IOptions<WalttiSettings>>().Value;
     client.BaseAddress = new Uri(s.DigitransitApiUrl);
-    if (!string.IsNullOrEmpty(s.DigitransitApiKey))
-        client.DefaultRequestHeaders.Add("digitransit-subscription-key", s.DigitransitApiKey);
+    // Auth headers are managed per-request by DigitransitClient (session token → API key fallback)
 });
 
 builder.Services.AddHostedService<DataSyncBackgroundService>();
