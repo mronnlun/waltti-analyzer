@@ -22,58 +22,26 @@ public class DigitransitClient
     // GraphQL queries
     // -----------------------------------------------------------------------
 
-    private const string QueryBulkDaily = @"
-{{
-  stops(ids: {0}) {{
-    gtfsId
-    name
-    code
-    lat
-    lon
-    stoptimesForServiceDate(date: ""{1}"") {{
-      pattern {{
-        route {{ shortName longName mode }}
-        directionId
-      }}
-      stoptimes {{
-        scheduledArrival
-        scheduledDeparture
-        realtimeArrival
-        realtimeDeparture
-        arrivalDelay
-        departureDelay
-        realtime
-        realtimeState
-        headsign
-        trip {{ gtfsId }}
-      }}
-    }}
-  }}
-}}";
-
-    private const string QueryBulkRealtime = @"
+    /// <summary>Sliding-window realtime query. Returns stoptimes within [startTime, startTime+timeRange].</summary>
+    private const string QuerySlidingWindow = @"
 {{
   stops(ids: {0}) {{
     gtfsId
     name
     stoptimesWithoutPatterns(
       startTime: {1},
-      timeRange: 7200,
-      numberOfDepartures: 50
+      timeRange: {2},
+      numberOfDepartures: 100
     ) {{
       serviceDay
-      scheduledArrival
-      realtimeArrival
-      arrivalDelay
       scheduledDeparture
-      realtimeDeparture
       departureDelay
       realtime
       realtimeState
       headsign
       trip {{
         gtfsId
-        route {{ shortName longName }}
+        route {{ gtfsId shortName longName mode }}
       }}
     }}
   }}
@@ -103,20 +71,17 @@ public class DigitransitClient
     // API methods
     // -----------------------------------------------------------------------
 
-    public async Task<List<JsonElement>> FetchBulkDailyAsync(List<string> stopIds, DateOnly? serviceDate = null)
+    /// <summary>
+    /// Fetch stoptimes within a sliding window for the given stops.
+    /// </summary>
+    /// <param name="stopIds">GTFS stop IDs to query.</param>
+    /// <param name="startTime">Unix timestamp for window start.</param>
+    /// <param name="timeRange">Window size in seconds.</param>
+    public async Task<List<JsonElement>> FetchSlidingWindowAsync(
+        List<string> stopIds, long startTime, int timeRange)
     {
-        var date = serviceDate ?? DateOnly.FromDateTime(TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, HelsinkiTz));
         var idsJson = JsonSerializer.Serialize(stopIds);
-        var query = string.Format(QueryBulkDaily, idsJson, date.ToString("yyyy-MM-dd"));
-        var data = await QueryAsync(query, retries: 2, timeoutSeconds: 120);
-        return GetArrayProperty(data, "stops");
-    }
-
-    public async Task<List<JsonElement>> FetchBulkRealtimeAsync(List<string> stopIds)
-    {
-        var nowUtc = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
-        var idsJson = JsonSerializer.Serialize(stopIds);
-        var query = string.Format(QueryBulkRealtime, idsJson, nowUtc);
+        var query = string.Format(QuerySlidingWindow, idsJson, startTime, timeRange);
         var data = await QueryAsync(query, retries: 2, timeoutSeconds: 120);
         return GetArrayProperty(data, "stops");
     }
@@ -208,7 +173,7 @@ public class DigitransitClient
         return default;
     }
 
-    private static List<JsonElement> GetArrayProperty(JsonElement element, string name)
+    internal static List<JsonElement> GetArrayProperty(JsonElement element, string name)
     {
         if (element.ValueKind == JsonValueKind.Undefined) return new List<JsonElement>();
         if (!element.TryGetProperty(name, out var prop)) return new List<JsonElement>();

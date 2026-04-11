@@ -33,11 +33,6 @@ public class DatabaseService
         SeedRealtimeStates();
     }
 
-    /// <summary>
-    /// Ensure all known GTFS-RT realtime_state values exist in the seed table.
-    /// EnsureCreated only seeds a table on first creation, so we need this for
-    /// existing databases that were created before new states were added.
-    /// </summary>
     private void SeedRealtimeStates()
     {
         var wanted = new (int Id, string Name)[]
@@ -53,7 +48,7 @@ public class DatabaseService
         var toAdd = wanted.Where(w => !existing.Contains(w.Name)).ToList();
         if (toAdd.Count == 0) return;
         foreach (var (id, name) in toAdd)
-            _context.RealtimeStates.Add(new Models.RealtimeState { Id = id, Name = name });
+            _context.RealtimeStates.Add(new RealtimeState { Id = id, Name = name });
         _context.SaveChanges();
     }
 
@@ -112,32 +107,78 @@ public class DatabaseService
     public async Task<List<string>> GetAllStopIdsAsync(string? feedId = null) =>
         (await GetAllStopsAsync(feedId)).Select(s => s.GtfsId).ToList();
 
-    public async Task<List<string>> GetRoutesForStopAsync(string stopId) =>
-        await _context.Observations
-            .Where(o => o.Stop!.GtfsId == stopId && o.Trip!.RouteShortName != null)
-            .Select(o => o.Trip!.RouteShortName!)
-            .Distinct().OrderBy(r => r).ToListAsync();
+    // -----------------------------------------------------------------------
+    // Route operations
+    // -----------------------------------------------------------------------
+
+    public async Task UpsertRouteAsync(string gtfsId, string? shortName, string? longName, string? mode)
+    {
+        var now = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+        if (IsSqlite)
+        {
+            await _context.Database.ExecuteSqlAsync($@"
+                INSERT INTO routes (gtfs_id, short_name, long_name, mode, updated_at)
+                VALUES ({gtfsId}, {shortName}, {longName}, {mode}, {now})
+                ON CONFLICT(gtfs_id) DO UPDATE SET
+                    short_name=excluded.short_name, long_name=excluded.long_name,
+                    mode=excluded.mode, updated_at=excluded.updated_at");
+        }
+        else
+        {
+            await _context.Database.ExecuteSqlAsync($@"
+                MERGE routes AS t
+                USING (SELECT {gtfsId} AS gtfs_id, {shortName} AS short_name,
+                              {longName} AS long_name, {mode} AS mode, {now} AS updated_at) AS s
+                ON t.gtfs_id = s.gtfs_id
+                WHEN MATCHED THEN UPDATE SET
+                    short_name=s.short_name, long_name=s.long_name, mode=s.mode, updated_at=s.updated_at
+                WHEN NOT MATCHED THEN INSERT (gtfs_id, short_name, long_name, mode, updated_at)
+                    VALUES (s.gtfs_id, s.short_name, s.long_name, s.mode, s.updated_at);");
+        }
+    }
+
+    public async Task UpsertRoutesBatchAsync(List<Dictionary<string, object?>> routes)
+    {
+        foreach (var r in routes)
+            await UpsertRouteAsync(
+                (string)r["gtfs_id"]!,
+                r.GetValueOrDefault("short_name") as string,
+                r.GetValueOrDefault("long_name") as string,
+                r.GetValueOrDefault("mode") as string);
+    }
 
     public async Task<List<string>> GetAllRoutesAsync(string? feedId = null)
     {
-        var q = _context.Observations.Where(o => o.Trip!.RouteShortName != null);
+        var q = _context.Routes.Where(r => r.ShortName != null);
         if (!string.IsNullOrEmpty(feedId))
-            q = q.Where(o => o.Stop!.GtfsId.StartsWith(feedId + ":"));
-        return await q.Select(o => o.Trip!.RouteShortName!).Distinct().OrderBy(r => r).ToListAsync();
+            q = q.Where(r => r.GtfsId.StartsWith(feedId + ":"));
+        return await q.Select(r => r.ShortName!).Distinct().OrderBy(r => r).ToListAsync();
     }
 
-    public async Task<List<string>> GetHeadsignsForStopAsync(string stopId) =>
-        await _context.Observations
-            .Where(o => o.Stop!.GtfsId == stopId && o.Trip!.Headsign != null)
-            .Select(o => o.Trip!.Headsign!)
-            .Distinct().OrderBy(h => h).ToListAsync();
+    public async Task<List<string>> GetRoutesForStopAsync(string stopId)
+    {
+        return await _context.Observations
+            .Where(o => o.Stop!.GtfsId == stopId)
+            .Select(o => o.Trip!.Route!.ShortName!)
+            .Where(n => n != null)
+            .Distinct().OrderBy(r => r).ToListAsync();
+    }
 
     public async Task<List<string>> GetAllHeadsignsAsync(string? feedId = null)
     {
-        var q = _context.Observations.Where(o => o.Trip!.Headsign != null);
+        var q = _context.Trips.Where(t => t.Headsign != null);
         if (!string.IsNullOrEmpty(feedId))
-            q = q.Where(o => o.Stop!.GtfsId.StartsWith(feedId + ":"));
-        return await q.Select(o => o.Trip!.Headsign!).Distinct().OrderBy(h => h).ToListAsync();
+            q = q.Where(t => t.Route!.GtfsId.StartsWith(feedId + ":"));
+        return await q.Select(t => t.Headsign!).Distinct().OrderBy(h => h).ToListAsync();
+    }
+
+    public async Task<List<string>> GetHeadsignsForStopAsync(string stopId)
+    {
+        return await _context.Observations
+            .Where(o => o.Stop!.GtfsId == stopId)
+            .Select(o => o.Trip!.Headsign!)
+            .Where(h => h != null)
+            .Distinct().OrderBy(h => h).ToListAsync();
     }
 
     // -----------------------------------------------------------------------
@@ -147,37 +188,46 @@ public class DatabaseService
     public async Task UpsertTripsBatchAsync(List<Dictionary<string, object?>> trips)
     {
         var now = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+
+        // Resolve route IDs
+        var routeGtfsIds = trips
+            .Select(t => t.GetValueOrDefault("route_gtfs_id") as string)
+            .Where(id => id != null).Distinct().ToList();
+        var routeMap = await _context.Routes
+            .Where(r => routeGtfsIds.Contains(r.GtfsId))
+            .ToDictionaryAsync(r => r.GtfsId, r => r.Id);
+
         foreach (var t in trips)
         {
             var gid = (string)t["gtfs_id"]!;
-            var rsn = t.GetValueOrDefault("route_short_name") as string;
-            var rln = t.GetValueOrDefault("route_long_name") as string;
-            var mode = t.GetValueOrDefault("mode") as string;
+            var routeGtfsId = t.GetValueOrDefault("route_gtfs_id") as string;
+            long? routeId = routeGtfsId != null && routeMap.TryGetValue(routeGtfsId, out var rid) ? rid : null;
             var hs = t.GetValueOrDefault("headsign") as string;
             var did = t.GetValueOrDefault("direction_id") as int?;
+
+            if (routeId == null) continue; // Can't store trip without route
 
             if (IsSqlite)
             {
                 await _context.Database.ExecuteSqlAsync($@"
-                    INSERT INTO trips (gtfs_id, route_short_name, route_long_name, mode, headsign, direction_id, updated_at)
-                    VALUES ({gid}, {rsn}, {rln}, {mode}, {hs}, {did}, {now})
+                    INSERT INTO trips (gtfs_id, route_id, headsign, direction_id, updated_at)
+                    VALUES ({gid}, {routeId}, {hs}, {did}, {now})
                     ON CONFLICT(gtfs_id) DO UPDATE SET
-                        route_short_name=excluded.route_short_name, route_long_name=excluded.route_long_name,
-                        mode=excluded.mode, headsign=excluded.headsign,
+                        route_id=excluded.route_id, headsign=excluded.headsign,
                         direction_id=excluded.direction_id, updated_at=excluded.updated_at");
             }
             else
             {
                 await _context.Database.ExecuteSqlAsync($@"
                     MERGE trips AS t
-                    USING (SELECT {gid} AS gtfs_id, {rsn} AS route_short_name, {rln} AS route_long_name,
-                                  {mode} AS mode, {hs} AS headsign, {did} AS direction_id, {now} AS updated_at) AS s
+                    USING (SELECT {gid} AS gtfs_id, {routeId} AS route_id,
+                                  {hs} AS headsign, {did} AS direction_id, {now} AS updated_at) AS s
                     ON t.gtfs_id = s.gtfs_id
                     WHEN MATCHED THEN UPDATE SET
-                        route_short_name=s.route_short_name, route_long_name=s.route_long_name,
-                        mode=s.mode, headsign=s.headsign, direction_id=s.direction_id, updated_at=s.updated_at
-                    WHEN NOT MATCHED THEN INSERT (gtfs_id, route_short_name, route_long_name, mode, headsign, direction_id, updated_at)
-                        VALUES (s.gtfs_id, s.route_short_name, s.route_long_name, s.mode, s.headsign, s.direction_id, s.updated_at);");
+                        route_id=s.route_id, headsign=s.headsign,
+                        direction_id=s.direction_id, updated_at=s.updated_at
+                    WHEN NOT MATCHED THEN INSERT (gtfs_id, route_id, headsign, direction_id, updated_at)
+                        VALUES (s.gtfs_id, s.route_id, s.headsign, s.direction_id, s.updated_at);");
             }
         }
     }
@@ -209,68 +259,55 @@ public class DatabaseService
             if (!stops.TryGetValue(stopGtfsId, out var stopId)) continue;
             if (!trips.TryGetValue(tripGtfsId, out var tripId)) continue;
 
-            var sd = (string)obs["service_date"]!;
+            var sd = Convert.ToInt32(obs["service_date"]);
             var sDep = Convert.ToInt32(obs["scheduled_departure"]);
-            int? sArr = GetNullableInt(obs, "scheduled_arrival");
-            int? rtArr = GetNullableInt(obs, "realtime_arrival");
-            int? rtDep = GetNullableInt(obs, "realtime_departure");
-            int? aDelay = GetNullableInt(obs, "arrival_delay");
             int? dDelay = GetNullableInt(obs, "departure_delay");
-            var rt = Convert.ToInt32(obs["realtime"]);
+            var delaySrc = Convert.ToInt32(obs["delay_source"]);
             var stateStr = obs.GetValueOrDefault("realtime_state") as string;
             int? stateId = stateStr != null && states.TryGetValue(stateStr, out var sId) ? sId : null;
-            var qa = Convert.ToInt64(obs["queried_at"]);
 
             if (IsSqlite)
             {
+                // Higher delay_source always wins: MEASURED(2) > PROPAGATED(1) > SCHEDULED(0)
                 await _context.Database.ExecuteSqlAsync($@"
                     INSERT INTO observations (stop_id, trip_id, service_date,
-                        scheduled_arrival, scheduled_departure, realtime_arrival, realtime_departure,
-                        arrival_delay, departure_delay, realtime, realtime_state_id, queried_at)
-                    VALUES ({stopId}, {tripId}, {sd}, {sArr}, {sDep}, {rtArr}, {rtDep},
-                            {aDelay}, {dDelay}, {rt}, {stateId}, {qa})
+                        scheduled_departure, departure_delay, delay_source, realtime_state_id)
+                    VALUES ({stopId}, {tripId}, {sd}, {sDep}, {dDelay}, {delaySrc}, {stateId})
                     ON CONFLICT(stop_id, trip_id, service_date) DO UPDATE SET
-                        scheduled_arrival=excluded.scheduled_arrival,
                         scheduled_departure=excluded.scheduled_departure,
-                        realtime_arrival=CASE WHEN excluded.realtime=1 THEN excluded.realtime_arrival ELSE realtime_arrival END,
-                        realtime_departure=CASE WHEN excluded.realtime=1 THEN excluded.realtime_departure ELSE realtime_departure END,
-                        arrival_delay=CASE WHEN excluded.realtime=1 THEN excluded.arrival_delay ELSE arrival_delay END,
-                        departure_delay=CASE WHEN excluded.realtime=1 THEN excluded.departure_delay ELSE departure_delay END,
-                        realtime=CASE WHEN excluded.realtime=1 THEN excluded.realtime ELSE realtime END,
-                        realtime_state_id=CASE WHEN excluded.realtime=1 THEN excluded.realtime_state_id ELSE realtime_state_id END,
-                        queried_at=excluded.queried_at");
+                        departure_delay=CASE WHEN excluded.delay_source >= delay_source
+                            THEN excluded.departure_delay ELSE departure_delay END,
+                        delay_source=CASE WHEN excluded.delay_source >= delay_source
+                            THEN excluded.delay_source ELSE delay_source END,
+                        realtime_state_id=CASE WHEN excluded.delay_source >= delay_source
+                            THEN excluded.realtime_state_id ELSE realtime_state_id END");
             }
             else
             {
                 await _context.Database.ExecuteSqlAsync($@"
                     MERGE observations AS t
                     USING (SELECT {stopId} AS stop_id, {tripId} AS trip_id, {sd} AS service_date,
-                                  {sArr} AS scheduled_arrival, {sDep} AS scheduled_departure,
-                                  {rtArr} AS realtime_arrival, {rtDep} AS realtime_departure,
-                                  {aDelay} AS arrival_delay, {dDelay} AS departure_delay,
-                                  {rt} AS realtime, {stateId} AS realtime_state_id, {qa} AS queried_at) AS s
+                                  {sDep} AS scheduled_departure, {dDelay} AS departure_delay,
+                                  {delaySrc} AS delay_source, {stateId} AS realtime_state_id) AS s
                     ON t.stop_id=s.stop_id AND t.trip_id=s.trip_id AND t.service_date=s.service_date
                     WHEN MATCHED THEN UPDATE SET
-                        scheduled_arrival=s.scheduled_arrival, scheduled_departure=s.scheduled_departure,
-                        realtime_arrival=CASE WHEN s.realtime=1 THEN s.realtime_arrival ELSE t.realtime_arrival END,
-                        realtime_departure=CASE WHEN s.realtime=1 THEN s.realtime_departure ELSE t.realtime_departure END,
-                        arrival_delay=CASE WHEN s.realtime=1 THEN s.arrival_delay ELSE t.arrival_delay END,
-                        departure_delay=CASE WHEN s.realtime=1 THEN s.departure_delay ELSE t.departure_delay END,
-                        realtime=CASE WHEN s.realtime=1 THEN s.realtime ELSE t.realtime END,
-                        realtime_state_id=CASE WHEN s.realtime=1 THEN s.realtime_state_id ELSE t.realtime_state_id END,
-                        queried_at=s.queried_at
-                    WHEN NOT MATCHED THEN INSERT (stop_id, trip_id, service_date, scheduled_arrival,
-                        scheduled_departure, realtime_arrival, realtime_departure, arrival_delay,
-                        departure_delay, realtime, realtime_state_id, queried_at)
-                    VALUES (s.stop_id, s.trip_id, s.service_date, s.scheduled_arrival,
-                        s.scheduled_departure, s.realtime_arrival, s.realtime_departure, s.arrival_delay,
-                        s.departure_delay, s.realtime, s.realtime_state_id, s.queried_at);");
+                        scheduled_departure=s.scheduled_departure,
+                        departure_delay=CASE WHEN s.delay_source >= t.delay_source
+                            THEN s.departure_delay ELSE t.departure_delay END,
+                        delay_source=CASE WHEN s.delay_source >= t.delay_source
+                            THEN s.delay_source ELSE t.delay_source END,
+                        realtime_state_id=CASE WHEN s.delay_source >= t.delay_source
+                            THEN s.realtime_state_id ELSE t.realtime_state_id END
+                    WHEN NOT MATCHED THEN INSERT (stop_id, trip_id, service_date, scheduled_departure,
+                        departure_delay, delay_source, realtime_state_id)
+                    VALUES (s.stop_id, s.trip_id, s.service_date, s.scheduled_departure,
+                        s.departure_delay, s.delay_source, s.realtime_state_id);");
             }
         }
     }
 
     public async Task<List<Observation>> GetObservationsAsync(string? stopId,
-        string startDate, string endDate, string? route = null,
+        int startDate, int endDate, string? route = null,
         int? timeFrom = null, int? timeTo = null, string? feedId = null, string? headsign = null)
     {
         var allStops = string.IsNullOrEmpty(stopId);
@@ -291,9 +328,9 @@ public class DatabaseService
     public async Task<List<Observation>> GetLatestObservationsAsync(int limit = 300, string? feedId = null)
     {
         var parms = new List<(string Name, object? Value)>();
-        var sql = $"SELECT {ObsColumns}, s.name AS stop_name {ObsJoins} WHERE o.realtime=1";
+        var sql = $"SELECT {ObsColumns}, s.name AS stop_name {ObsJoins} WHERE o.delay_source>=1";
         if (!string.IsNullOrEmpty(feedId)) { sql += " AND s.gtfs_id LIKE @feed"; parms.Add(("@feed", $"{feedId}:%")); }
-        sql += " ORDER BY o.queried_at DESC, o.service_date DESC, o.scheduled_departure DESC";
+        sql += " ORDER BY o.service_date DESC, o.scheduled_departure DESC";
         sql += IsSqlite ? " LIMIT @lim" : " OFFSET 0 ROWS FETCH NEXT @lim ROWS ONLY";
         parms.Add(("@lim", limit));
         return await ReadObservationsRawAsync(sql, parms, includeStopName: true);
@@ -331,15 +368,16 @@ public class DatabaseService
 
     private const string ObsColumns = @"
         o.id, s.gtfs_id AS stop_gtfs_id, t.gtfs_id AS trip_gtfs_id,
-        o.service_date, o.scheduled_arrival, o.scheduled_departure,
-        o.realtime_arrival, o.realtime_departure, o.arrival_delay, o.departure_delay,
-        o.realtime, rs.name AS realtime_state, o.queried_at,
-        t.route_short_name, t.route_long_name, t.mode, t.headsign, t.direction_id";
+        o.service_date, o.scheduled_departure,
+        o.departure_delay, o.delay_source,
+        rs.name AS realtime_state,
+        r.short_name AS route_short_name, t.headsign, t.direction_id";
 
     private const string ObsJoins = @"
         FROM observations o
         JOIN stops s ON o.stop_id=s.id
         JOIN trips t ON o.trip_id=t.id
+        JOIN routes r ON t.route_id=r.id
         LEFT JOIN realtime_states rs ON o.realtime_state_id=rs.id";
 
     private static void AppendStopFilter(ref string sql, List<(string Name, object? Value)> parms,
@@ -352,7 +390,7 @@ public class DatabaseService
     private static void AppendFilters(ref string sql, List<(string Name, object? Value)> parms,
         string? route, int? timeFrom, int? timeTo, string? headsign = null)
     {
-        if (!string.IsNullOrEmpty(route)) { sql += " AND t.route_short_name=@route"; parms.Add(("@route", route)); }
+        if (!string.IsNullOrEmpty(route)) { sql += " AND r.short_name=@route"; parms.Add(("@route", route)); }
         if (!string.IsNullOrEmpty(headsign)) { sql += " AND t.headsign=@headsign"; parms.Add(("@headsign", headsign)); }
         if (timeFrom.HasValue) { sql += " AND o.scheduled_departure>=@tf"; parms.Add(("@tf", timeFrom.Value)); }
         if (timeTo.HasValue) { sql += " AND o.scheduled_departure<=@tt"; parms.Add(("@tt", timeTo.Value)); }
@@ -361,7 +399,7 @@ public class DatabaseService
     private static void AppendPastOnlyFilter(ref string sql, List<(string Name, object? Value)> parms)
     {
         var helsinkiNow = TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, HelsinkiTz);
-        var today = helsinkiNow.ToString("yyyy-MM-dd");
+        var today = int.Parse(helsinkiNow.ToString("yyyyMMdd"));
         var nowSecs = (int)helsinkiNow.TimeOfDay.TotalSeconds;
         sql += " AND (o.service_date < @today OR o.scheduled_departure <= @now_secs)";
         parms.Add(("@today", today));
@@ -400,19 +438,12 @@ public class DatabaseService
                     Id = reader.GetInt64(reader.GetOrdinal("id")),
                     StopGtfsId = reader.GetString(reader.GetOrdinal("stop_gtfs_id")),
                     TripGtfsId = reader.GetString(reader.GetOrdinal("trip_gtfs_id")),
-                    ServiceDate = reader.GetString(reader.GetOrdinal("service_date")),
-                    ScheduledArrival = reader.IsDBNull(reader.GetOrdinal("scheduled_arrival")) ? null : reader.GetInt32(reader.GetOrdinal("scheduled_arrival")),
+                    ServiceDate = reader.GetInt32(reader.GetOrdinal("service_date")),
                     ScheduledDeparture = reader.GetInt32(reader.GetOrdinal("scheduled_departure")),
-                    RealtimeArrival = reader.IsDBNull(reader.GetOrdinal("realtime_arrival")) ? null : reader.GetInt32(reader.GetOrdinal("realtime_arrival")),
-                    RealtimeDeparture = reader.IsDBNull(reader.GetOrdinal("realtime_departure")) ? null : reader.GetInt32(reader.GetOrdinal("realtime_departure")),
-                    ArrivalDelay = reader.IsDBNull(reader.GetOrdinal("arrival_delay")) ? null : reader.GetInt32(reader.GetOrdinal("arrival_delay")),
                     DepartureDelay = reader.IsDBNull(reader.GetOrdinal("departure_delay")) ? null : reader.GetInt32(reader.GetOrdinal("departure_delay")),
-                    Realtime = reader.GetInt32(reader.GetOrdinal("realtime")),
+                    DelaySource = reader.GetInt32(reader.GetOrdinal("delay_source")),
                     RealtimeState = reader.IsDBNull(reader.GetOrdinal("realtime_state")) ? null : reader.GetString(reader.GetOrdinal("realtime_state")),
-                    QueriedAt = reader.GetInt64(reader.GetOrdinal("queried_at")),
                     RouteShortName = reader.IsDBNull(reader.GetOrdinal("route_short_name")) ? null : reader.GetString(reader.GetOrdinal("route_short_name")),
-                    RouteLongName = reader.IsDBNull(reader.GetOrdinal("route_long_name")) ? null : reader.GetString(reader.GetOrdinal("route_long_name")),
-                    Mode = reader.IsDBNull(reader.GetOrdinal("mode")) ? null : reader.GetString(reader.GetOrdinal("mode")),
                     Headsign = reader.IsDBNull(reader.GetOrdinal("headsign")) ? null : reader.GetString(reader.GetOrdinal("headsign")),
                     DirectionId = reader.IsDBNull(reader.GetOrdinal("direction_id")) ? null : reader.GetInt32(reader.GetOrdinal("direction_id")),
                 };
