@@ -30,7 +30,107 @@ public class DatabaseService
     public void EnsureCreated()
     {
         _context.Database.EnsureCreated();
+        ApplySchemaMigrations();
         SeedRealtimeStates();
+    }
+
+    // -----------------------------------------------------------------------
+    // Schema migrations
+    // (EnsureCreated only creates tables for a blank DB; these patches apply
+    //  to existing databases that have an older schema.)
+    // -----------------------------------------------------------------------
+
+    private void ApplySchemaMigrations()
+    {
+        // v2: routes table, trips.route_id FK, observations.delay_source
+        if (!TableExists("routes"))
+        {
+            _logger.LogInformation("Schema migration: creating routes table");
+            if (IsSqlite)
+            {
+                _context.Database.ExecuteSqlRaw(@"
+                    CREATE TABLE IF NOT EXISTS routes (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        gtfs_id TEXT NOT NULL UNIQUE,
+                        short_name TEXT,
+                        long_name TEXT,
+                        mode TEXT,
+                        updated_at INTEGER NOT NULL DEFAULT 0
+                    )");
+            }
+            else
+            {
+                _context.Database.ExecuteSqlRaw(@"
+                    CREATE TABLE routes (
+                        id BIGINT NOT NULL IDENTITY(1,1),
+                        gtfs_id NVARCHAR(450) NOT NULL,
+                        short_name NVARCHAR(MAX) NULL,
+                        long_name NVARCHAR(MAX) NULL,
+                        mode NVARCHAR(MAX) NULL,
+                        updated_at BIGINT NOT NULL DEFAULT 0,
+                        CONSTRAINT PK_routes PRIMARY KEY (id),
+                        CONSTRAINT UQ_routes_gtfs_id UNIQUE (gtfs_id)
+                    )");
+            }
+        }
+
+        if (!ColumnExists("trips", "route_id"))
+        {
+            _logger.LogInformation("Schema migration: adding trips.route_id");
+            if (IsSqlite)
+                _context.Database.ExecuteSqlRaw("ALTER TABLE trips ADD COLUMN route_id INTEGER NOT NULL DEFAULT 0");
+            else
+                _context.Database.ExecuteSqlRaw("ALTER TABLE trips ADD route_id BIGINT NOT NULL DEFAULT 0");
+        }
+
+        if (!ColumnExists("observations", "delay_source"))
+        {
+            _logger.LogInformation("Schema migration: adding observations.delay_source");
+            if (IsSqlite)
+                _context.Database.ExecuteSqlRaw("ALTER TABLE observations ADD COLUMN delay_source INTEGER NOT NULL DEFAULT 0");
+            else
+                _context.Database.ExecuteSqlRaw("ALTER TABLE observations ADD delay_source INT NOT NULL DEFAULT 0");
+        }
+    }
+
+    private bool TableExists(string tableName)
+    {
+        var conn = _context.Database.GetDbConnection();
+        bool wasOpen = conn.State == System.Data.ConnectionState.Open;
+        if (!wasOpen) conn.Open();
+        try
+        {
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = IsSqlite
+                ? $"SELECT name FROM sqlite_master WHERE type='table' AND name='{tableName}'"
+                : $"SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_NAME='{tableName}' AND TABLE_TYPE='BASE TABLE'";
+            var result = cmd.ExecuteScalar();
+            return result != null && result != DBNull.Value;
+        }
+        finally
+        {
+            if (!wasOpen) conn.Close();
+        }
+    }
+
+    private bool ColumnExists(string tableName, string columnName)
+    {
+        var conn = _context.Database.GetDbConnection();
+        bool wasOpen = conn.State == System.Data.ConnectionState.Open;
+        if (!wasOpen) conn.Open();
+        try
+        {
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = IsSqlite
+                ? $"SELECT name FROM pragma_table_info('{tableName}') WHERE name='{columnName}'"
+                : $"SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME='{tableName}' AND COLUMN_NAME='{columnName}'";
+            var result = cmd.ExecuteScalar();
+            return result != null && result != DBNull.Value;
+        }
+        finally
+        {
+            if (!wasOpen) conn.Close();
+        }
     }
 
     private void SeedRealtimeStates()
