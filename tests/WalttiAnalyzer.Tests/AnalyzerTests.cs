@@ -321,10 +321,14 @@ public class AnalyzerTests : IDisposable
     }
 
     [Fact]
-    public void ParseDateToInt()
+    public void TryParseDateToInt()
     {
-        Assert.Equal(20260402, AnalyzerService.ParseDateToInt("2026-04-02"));
-        Assert.Equal(20261231, AnalyzerService.ParseDateToInt("2026-12-31"));
+        Assert.Equal(20260402, AnalyzerService.TryParseDateToInt("2026-04-02"));
+        Assert.Equal(20261231, AnalyzerService.TryParseDateToInt("2026-12-31"));
+        Assert.Null(AnalyzerService.TryParseDateToInt(""));
+        Assert.Null(AnalyzerService.TryParseDateToInt(null));
+        Assert.Null(AnalyzerService.TryParseDateToInt("not-a-date"));
+        Assert.Null(AnalyzerService.TryParseDateToInt("20260402")); // wrong format
     }
 
     // -----------------------------------------------------------------------

@@ -168,10 +168,13 @@ app.MapGet("/api/observations", async (
     if (string.IsNullOrEmpty(startDate) || string.IsNullOrEmpty(endDate))
         return Results.BadRequest(new { error = "date or from/to parameters required" });
 
+    var start = AnalyzerService.TryParseDateToInt(startDate);
+    var end = AnalyzerService.TryParseDateToInt(endDate);
+    if (!start.HasValue || !end.HasValue)
+        return Results.BadRequest(new { error = "Invalid date format. Use yyyy-MM-dd." });
+
     var feedId = string.IsNullOrEmpty(stop_id) ? opts.Value.FeedId : null;
-    int start = AnalyzerService.ParseDateToInt(startDate);
-    int end = AnalyzerService.ParseDateToInt(endDate);
-    var rows = await db.GetObservationsAsync(stop_id, start, end, route,
+    var rows = await db.GetObservationsAsync(stop_id, start.Value, end.Value, route,
         AnalyzerService.ParseTime(time_from), AnalyzerService.ParseTime(time_to), feedId, headsign);
     return Results.Ok(rows);
 });

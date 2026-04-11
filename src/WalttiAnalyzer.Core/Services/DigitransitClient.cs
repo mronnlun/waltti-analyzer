@@ -101,11 +101,8 @@ public class DigitransitClient
             if (!routeGtfsId.StartsWith($"{feedId}:")) continue;
 
             var routeStopIds = new HashSet<string>();
-            int? directionId = null;
             foreach (var p in GetArrayProperty(r, "patterns"))
             {
-                directionId ??= p.TryGetProperty("directionId", out var d) && d.ValueKind != JsonValueKind.Null
-                    ? d.GetInt32() : null;
                 foreach (var s in GetArrayProperty(p, "stops"))
                 {
                     var sid = s.GetProperty("gtfsId").GetString()!;

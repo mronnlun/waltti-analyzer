@@ -69,8 +69,6 @@ public class CollectorService
     {
         var feedId = _settings.FeedId;
         var nowUtc = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
-        var helsinkiNow = TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, HelsinkiTz);
-        var nowSecsSinceMidnight = (int)helsinkiNow.TimeOfDay.TotalSeconds;
 
         // Window: from 60s before last poll (or 10min ago on first run) to futureSeconds from now
         long windowStart = lastPollUnixUtc.HasValue
@@ -102,7 +100,7 @@ public class CollectorService
                 totalStopsPolled += stopsData.Count;
 
                 var (routes, trips, observations, measured, propagated) =
-                    ProcessSlidingWindowBatch(stopsData, nowSecsSinceMidnight);
+                    ProcessSlidingWindowBatch(stopsData, nowUtc);
 
                 if (routes.Count > 0) await _db.UpsertRoutesBatchAsync(routes.Values.ToList());
                 if (trips.Count > 0) await _db.UpsertTripsBatchAsync(trips.Values.ToList());
@@ -154,7 +152,7 @@ public class CollectorService
         Dictionary<string, Dictionary<string, object?>> Trips,
         List<Dictionary<string, object?>> Observations,
         int Measured, int Propagated)
-        ProcessSlidingWindowBatch(List<JsonElement> stopsData, int nowSecsSinceMidnight)
+        ProcessSlidingWindowBatch(List<JsonElement> stopsData, long nowUtc)
     {
         var routes = new Dictionary<string, Dictionary<string, object?>>();
         var trips = new Dictionary<string, Dictionary<string, object?>>();
@@ -177,7 +175,8 @@ public class CollectorService
 
                 if (!st.TryGetProperty("serviceDay", out var sd) || sd.ValueKind == JsonValueKind.Null)
                     continue;
-                var svcDate = ServiceDayToDateInt(sd.GetInt64());
+                var serviceDayUnix = sd.GetInt64();
+                var svcDate = ServiceDayToDateInt(serviceDayUnix);
 
                 // Extract route info
                 var route = trip.TryGetProperty("route", out var r) ? r : default;
@@ -214,8 +213,10 @@ public class CollectorService
                     ? dd.GetInt32() : 0;
                 var realtimeState = st.TryGetProperty("realtimeState", out var rs) ? rs.GetString() : null;
 
-                // Classify: past departure = MEASURED, future = PROPAGATED
-                int delaySource = scheduledDep <= nowSecsSinceMidnight ? 2 : 1;
+                // Classify using absolute timestamp: serviceDayUnix + scheduledDep vs nowUtc
+                // This correctly handles non-today service days and after-midnight times (>86400)
+                long departureUnix = serviceDayUnix + scheduledDep;
+                int delaySource = departureUnix <= nowUtc ? 2 : 1;
                 if (delaySource == 2) measured++; else propagated++;
 
                 observations.Add(new Dictionary<string, object?>

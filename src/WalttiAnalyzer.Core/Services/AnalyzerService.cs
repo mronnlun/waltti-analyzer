@@ -33,8 +33,13 @@ public class AnalyzerService
         return h * 3600 + m * 60;
     }
 
-    /// <summary>Converts "2026-04-02" to 20260402.</summary>
-    public static int ParseDateToInt(string date) => int.Parse(date.Replace("-", ""));
+    /// <summary>Converts "2026-04-02" to 20260402. Returns null if the format is invalid.</summary>
+    public static int? TryParseDateToInt(string? date)
+    {
+        if (string.IsNullOrEmpty(date)) return null;
+        if (!DateOnly.TryParseExact(date, "yyyy-MM-dd", out var d)) return null;
+        return d.Year * 10000 + d.Month * 100 + d.Day;
+    }
 
     public static string FormatDelay(int? seconds)
     {
@@ -51,7 +56,11 @@ public class AnalyzerService
         string startDate, string endDate, string? route = null,
         int? timeFrom = null, int? timeTo = null, string? feedId = null, string? headsign = null)
     {
-        int start = ParseDateToInt(startDate), end = ParseDateToInt(endDate);
+        var startParsed = TryParseDateToInt(startDate);
+        var endParsed = TryParseDateToInt(endDate);
+        if (!startParsed.HasValue || !endParsed.HasValue)
+            return new Dictionary<string, object?> { ["total_departures"] = 0, ["message"] = "Invalid date format" };
+        int start = startParsed.Value, end = endParsed.Value;
 
         var sql = @"SELECT o.departure_delay, o.delay_source, o.service_date, rs.name AS realtime_state
                     FROM observations o
@@ -135,7 +144,10 @@ public class AnalyzerService
         string startDate, string endDate, string? route = null,
         int? timeFrom = null, int? timeTo = null, string? feedId = null, string? headsign = null)
     {
-        int start = ParseDateToInt(startDate), end = ParseDateToInt(endDate);
+        var startParsed = TryParseDateToInt(startDate);
+        var endParsed = TryParseDateToInt(endDate);
+        if (!startParsed.HasValue || !endParsed.HasValue) return new List<Dictionary<string, object?>>();
+        int start = startParsed.Value, end = endParsed.Value;
 
         var sql = @"SELECT r.short_name, o.departure_delay, o.delay_source, rs.name AS realtime_state
                     FROM observations o
@@ -194,7 +206,10 @@ public class AnalyzerService
         string startDate, string endDate, string? route = null,
         int? timeFrom = null, int? timeTo = null, string? feedId = null, string? headsign = null)
     {
-        int start = ParseDateToInt(startDate), end = ParseDateToInt(endDate);
+        var startParsed = TryParseDateToInt(startDate);
+        var endParsed = TryParseDateToInt(endDate);
+        if (!startParsed.HasValue || !endParsed.HasValue) return new List<Dictionary<string, object?>>();
+        int start = startParsed.Value, end = endParsed.Value;
 
         var sql = @"SELECT (o.scheduled_departure / 3600) AS hour, o.departure_delay, o.delay_source, rs.name AS realtime_state
                     FROM observations o
