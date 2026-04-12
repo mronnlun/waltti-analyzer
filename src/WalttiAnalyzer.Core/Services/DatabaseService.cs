@@ -42,7 +42,7 @@ public class DatabaseService
 
     private void ApplySchemaMigrations()
     {
-        // v2: routes table, trips.route_id FK, observations.delay_source
+        // v2: routes table, trips.route_id FK, observations rebuilt with new schema
         if (!TableExists("routes"))
         {
             _logger.LogInformation("Schema migration: creating routes table");
@@ -83,13 +83,93 @@ public class DatabaseService
                 _context.Database.ExecuteSqlRaw("ALTER TABLE trips ADD route_id BIGINT NOT NULL DEFAULT 0");
         }
 
-        if (!ColumnExists("observations", "delay_source"))
+        // service_date changed from string to int, and queried_at (NOT NULL, no default) was
+        // removed. Both make the old table incompatible. Rebuild it when service_date is the
+        // wrong type — old data is unusable anyway (wrong format, missing delay_source).
+        if (ObservationsServiceDateIsString())
+        {
+            _logger.LogInformation("Schema migration: rebuilding observations table (service_date type change + column cleanup)");
+            RebuildObservationsTable();
+        }
+        else if (!ColumnExists("observations", "delay_source"))
         {
             _logger.LogInformation("Schema migration: adding observations.delay_source");
             if (IsSqlite)
                 _context.Database.ExecuteSqlRaw("ALTER TABLE observations ADD COLUMN delay_source INTEGER NOT NULL DEFAULT 0");
             else
                 _context.Database.ExecuteSqlRaw("ALTER TABLE observations ADD delay_source INT NOT NULL DEFAULT 0");
+        }
+    }
+
+    /// <summary>Returns true when the observations.service_date column is not a numeric type,
+    /// meaning the table was created with the old schema (string service dates).</summary>
+    private bool ObservationsServiceDateIsString()
+    {
+        var conn = _context.Database.GetDbConnection();
+        bool wasOpen = conn.State == System.Data.ConnectionState.Open;
+        if (!wasOpen) conn.Open();
+        try
+        {
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = IsSqlite
+                ? "SELECT type FROM pragma_table_info('observations') WHERE name='service_date'"
+                : "SELECT DATA_TYPE FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME='observations' AND COLUMN_NAME='service_date'";
+            var result = cmd.ExecuteScalar();
+            if (result == null || result == DBNull.Value) return false;
+            var typeStr = result.ToString()!.ToUpperInvariant();
+            // SQLite stores as "INTEGER"; SQL Server stores as "int"
+            return !typeStr.Contains("INT");
+        }
+        finally
+        {
+            if (!wasOpen) conn.Close();
+        }
+    }
+
+    private void RebuildObservationsTable()
+    {
+        if (IsSqlite)
+        {
+            _context.Database.ExecuteSqlRaw("DROP TABLE IF EXISTS observations");
+            _context.Database.ExecuteSqlRaw(@"
+                CREATE TABLE observations (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    stop_id INTEGER NOT NULL,
+                    trip_id INTEGER NOT NULL,
+                    service_date INTEGER NOT NULL,
+                    scheduled_departure INTEGER NOT NULL,
+                    departure_delay INTEGER NULL,
+                    delay_source INTEGER NOT NULL DEFAULT 0,
+                    realtime_state_id INTEGER NULL,
+                    FOREIGN KEY (stop_id) REFERENCES stops(id),
+                    FOREIGN KEY (trip_id) REFERENCES trips(id),
+                    FOREIGN KEY (realtime_state_id) REFERENCES realtime_states(id),
+                    UNIQUE (stop_id, trip_id, service_date)
+                )");
+            _context.Database.ExecuteSqlRaw(
+                "CREATE INDEX idx_obs_stop_date ON observations (stop_id, service_date)");
+        }
+        else
+        {
+            _context.Database.ExecuteSqlRaw("DROP TABLE observations");
+            _context.Database.ExecuteSqlRaw(@"
+                CREATE TABLE observations (
+                    id BIGINT NOT NULL IDENTITY(1,1),
+                    stop_id BIGINT NOT NULL,
+                    trip_id BIGINT NOT NULL,
+                    service_date INT NOT NULL,
+                    scheduled_departure INT NOT NULL,
+                    departure_delay INT NULL,
+                    delay_source INT NOT NULL DEFAULT 0,
+                    realtime_state_id INT NULL,
+                    CONSTRAINT PK_observations PRIMARY KEY (id),
+                    CONSTRAINT FK_obs_stops FOREIGN KEY (stop_id) REFERENCES stops(id),
+                    CONSTRAINT FK_obs_trips FOREIGN KEY (trip_id) REFERENCES trips(id),
+                    CONSTRAINT FK_obs_states FOREIGN KEY (realtime_state_id) REFERENCES realtime_states(id),
+                    CONSTRAINT uq_obs_stop_trip_date UNIQUE (stop_id, trip_id, service_date)
+                )");
+            _context.Database.ExecuteSqlRaw(
+                "CREATE INDEX idx_obs_stop_date ON observations (stop_id, service_date)");
         }
     }
 
