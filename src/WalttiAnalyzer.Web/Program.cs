@@ -161,7 +161,7 @@ app.MapGet("/api/headsigns-for-stop", async (string? stop_id, DatabaseService db
 app.MapGet("/api/observations", async (
     string? stop_id, string? date, string? from, string? to,
     string? route, string? time_from, string? time_to, string? headsign,
-    DatabaseService db, AnalyzerService analyzer, IOptions<WalttiSettings> opts) =>
+    DatabaseService db, AnalyzerService analyzer, IOptions<WalttiSettings> opts, CancellationToken ct) =>
 {
     var startDate = from ?? date ?? "";
     var endDate = to ?? date ?? "";
@@ -175,55 +175,73 @@ app.MapGet("/api/observations", async (
 
     var feedId = string.IsNullOrEmpty(stop_id) ? opts.Value.FeedId : null;
     var rows = await db.GetObservationsAsync(stop_id, start.Value, end.Value, route,
-        AnalyzerService.ParseTime(time_from), AnalyzerService.ParseTime(time_to), feedId, headsign);
+        AnalyzerService.ParseTime(time_from), AnalyzerService.ParseTime(time_to), feedId, headsign, ct);
     return Results.Ok(rows);
 });
 
-app.MapGet("/api/latest-observations", async (DatabaseService db, IOptions<WalttiSettings> opts) =>
+app.MapGet("/api/latest-observations", async (DatabaseService db, IOptions<WalttiSettings> opts, CancellationToken ct) =>
 {
-    var rows = await db.GetLatestObservationsAsync(300, opts.Value.FeedId);
+    var rows = await db.GetLatestObservationsAsync(300, opts.Value.FeedId, ct);
     return Results.Ok(rows);
 });
 
 app.MapGet("/api/summary", async (
     string? stop_id, string? from, string? to, string? route,
     string? time_from, string? time_to, string? headsign,
-    AnalyzerService analyzer, IOptions<WalttiSettings> opts) =>
+    AnalyzerService analyzer, IOptions<WalttiSettings> opts, CancellationToken ct) =>
 {
     if (string.IsNullOrEmpty(from) || string.IsNullOrEmpty(to))
         return Results.BadRequest(new { error = "from and to parameters required" });
 
     var feedId = string.IsNullOrEmpty(stop_id) ? opts.Value.FeedId : null;
     var result = await analyzer.GetSummaryAsync(stop_id, from, to, route,
-        AnalyzerService.ParseTime(time_from), AnalyzerService.ParseTime(time_to), feedId, headsign);
+        AnalyzerService.ParseTime(time_from), AnalyzerService.ParseTime(time_to), feedId, headsign, ct);
     return Results.Ok(result);
 });
 
 app.MapGet("/api/route-breakdown", async (
     string? stop_id, string? from, string? to, string? route,
     string? time_from, string? time_to, string? headsign,
-    AnalyzerService analyzer, IOptions<WalttiSettings> opts) =>
+    AnalyzerService analyzer, IOptions<WalttiSettings> opts, CancellationToken ct) =>
 {
     if (string.IsNullOrEmpty(from) || string.IsNullOrEmpty(to))
         return Results.BadRequest(new { error = "from and to parameters required" });
 
     var feedId = string.IsNullOrEmpty(stop_id) ? opts.Value.FeedId : null;
     var result = await analyzer.GetRouteBreakdownAsync(stop_id, from, to, route,
-        AnalyzerService.ParseTime(time_from), AnalyzerService.ParseTime(time_to), feedId, headsign);
+        AnalyzerService.ParseTime(time_from), AnalyzerService.ParseTime(time_to), feedId, headsign, ct);
     return Results.Ok(result);
 });
 
 app.MapGet("/api/delay-by-hour", async (
     string? stop_id, string? from, string? to, string? route,
     string? time_from, string? time_to, string? headsign,
-    AnalyzerService analyzer, IOptions<WalttiSettings> opts) =>
+    AnalyzerService analyzer, IOptions<WalttiSettings> opts, CancellationToken ct) =>
 {
     if (string.IsNullOrEmpty(from) || string.IsNullOrEmpty(to))
         return Results.BadRequest(new { error = "from and to parameters required" });
 
     var feedId = string.IsNullOrEmpty(stop_id) ? opts.Value.FeedId : null;
     var result = await analyzer.GetDelayByHourAsync(stop_id, from, to, route,
-        AnalyzerService.ParseTime(time_from), AnalyzerService.ParseTime(time_to), feedId, headsign);
+        AnalyzerService.ParseTime(time_from), AnalyzerService.ParseTime(time_to), feedId, headsign, ct);
+    return Results.Ok(result);
+});
+
+app.MapGet("/api/facets", async (
+    string? stop_id, string? from, string? to, string? route,
+    string? time_from, string? time_to, string? headsign,
+    DatabaseService db, IOptions<WalttiSettings> opts, CancellationToken ct) =>
+{
+    if (string.IsNullOrEmpty(from) || string.IsNullOrEmpty(to))
+        return Results.BadRequest(new { error = "from and to parameters required" });
+
+    var start = AnalyzerService.TryParseDateToInt(from);
+    var end = AnalyzerService.TryParseDateToInt(to);
+    if (!start.HasValue || !end.HasValue)
+        return Results.BadRequest(new { error = "Invalid date format. Use yyyy-MM-dd." });
+
+    var result = await db.GetFacetsAsync(stop_id, route, headsign, start.Value, end.Value,
+        AnalyzerService.ParseTime(time_from), AnalyzerService.ParseTime(time_to), opts.Value.FeedId, ct);
     return Results.Ok(result);
 });
 

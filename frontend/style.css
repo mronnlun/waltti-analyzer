@@ -162,29 +162,34 @@ h2 {
     cursor: help;
 }
 
-.actions {
+.filter-status {
     display: flex;
-    gap: 0.5rem;
     align-items: center;
-}
-
-button {
-    padding: 0.4rem 1rem;
-    background: #3498db;
-    color: white;
-    border: none;
-    border-radius: 4px;
-    cursor: pointer;
-    font-size: 0.9rem;
-}
-
-button:hover {
-    background: #2980b9;
+    min-height: 1.4rem;
 }
 
 #action-status {
     font-size: 0.85rem;
     color: #7f8c8d;
+}
+
+.filter-clear-btn {
+    flex-shrink: 0;
+    padding: 0 0.35rem;
+    background: transparent;
+    color: #95a5a6;
+    border: 1px solid #ddd;
+    border-radius: 3px;
+    cursor: pointer;
+    font-size: 0.9rem;
+    line-height: 1.6rem;
+    height: 1.6rem;
+}
+
+.filter-clear-btn:hover {
+    background: #ecf0f1;
+    color: #7f8c8d;
+    border-color: #bdc3c7;
 }
 
 /* Cards */
