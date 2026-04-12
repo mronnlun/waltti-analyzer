@@ -184,12 +184,11 @@ async function renderDashboard(container) {
       <div class="filter-form" id="dash-form">
         <div class="filter-row-stop">
           <label for="stop-select">Stop</label>
-          <select id="stop-select"><option value="">Loading…</option></select>
-          <button type="button" class="filter-clear-btn" id="stop-clear" title="Show all stops" aria-label="Show all stops">×</button>
+          <select id="stop-select"></select>
         </div>
         <div class="filter-row-options">
-          <label>From <input type="date" id="from-date" value="${daysAgo(5)}"></label>
-          <label>To <input type="date" id="to-date" value="${todayStr()}"></label>
+          <label>From <input type="date" id="from-date" value="${daysAgo(2)}"></label>
+          <label>To <input type="date" id="to-date" value="${daysAgo(1)}"></label>
         </div>
         <div class="filter-row-route">
           <label for="route-select">Route</label>
@@ -216,6 +215,29 @@ async function renderDashboard(container) {
 
   _updatingDropdowns = true;
 
+  // Initialize all three TomSelects immediately so placeholders show at once
+  // (stop options are populated after the API call below)
+  stopSelect = new TomSelect("#stop-select", {
+    placeholder: "All stops",
+    valueField: "value",
+    labelField: "name",
+    searchField: ["name", "id"],
+    plugins: ["clear_button"],
+    options: [],
+    onChange: () => { if (!_updatingDropdowns) loadDashboardData(); },
+    render: {
+      option: function (data, escape) {
+        return `<div class="option ts-stop-option">
+          <span class="ts-stop-name">${escape(data.name)}</span>
+          <span class="ts-stop-id">${escape(data.id)}</span>
+        </div>`;
+      },
+      item: function (data, escape) {
+        return `<div class="item" title="${escape(data.name)} (${escape(data.id)})">${escape(data.name)}</div>`;
+      },
+    },
+  });
+
   routeSelect = new TomSelect("#route-select", {
     placeholder: "All routes",
     plugins: ["clear_button"],
@@ -238,56 +260,24 @@ async function renderDashboard(container) {
     },
   });
 
-  // Load stops and settings in parallel
+  // Load stops and populate the stop dropdown
   try {
-    const [stops, status] = await Promise.all([
-      fetchJSON("stops"),
-      fetchJSON("status"),
-    ]);
-    const allStopsOption = { value: "", name: "All stops", id: "" };
-    stopSelect = new TomSelect("#stop-select", {
-      placeholder: "Select a stop…",
-      valueField: "value",
-      labelField: "name",
-      searchField: ["name", "id"],
-      options: [allStopsOption, ...stops.map((s) => ({ value: s.gtfs_id, name: s.name, id: s.gtfs_id }))],
-      items: status.default_stop_id ? [status.default_stop_id] : [""],
-      onChange: () => { if (!_updatingDropdowns) loadDashboardData(); },
-      render: {
-        option: function (data, escape) {
-          if (data.value === "") {
-            return `<div class="option ts-stop-option ts-stop-all"><span class="ts-stop-name">${escape(data.name)}</span></div>`;
-          }
-          return `<div class="option ts-stop-option">
-            <span class="ts-stop-name">${escape(data.name)}</span>
-            <span class="ts-stop-id">${escape(data.id)}</span>
-          </div>`;
-        },
-        item: function (data, escape) {
-          if (data.value === "") {
-            return `<div class="item">${escape(data.name)}</div>`;
-          }
-          return `<div class="item" title="${escape(data.name)} (${escape(data.id)})">${escape(data.name)}</div>`;
-        },
-      },
-    });
+    const stops = await fetchJSON("stops");
+    stopSelect.addOptions(stops.map((s) => ({ value: s.gtfs_id, name: s.name, id: s.gtfs_id })));
   } catch {
-    document.getElementById("stop-select").innerHTML =
-      '<option value="">Failed to load stops</option>';
+    // Stop dropdown stays empty but functional
   }
 
   _updatingDropdowns = false;
 
   // Wire up date / time change listeners
-  document.getElementById("from-date").addEventListener("change", () => loadDashboardData());
-  document.getElementById("to-date").addEventListener("change", () => loadDashboardData());
+  // Use "input" for date fields so changes fire immediately when a date is picked
+  document.getElementById("from-date").addEventListener("input", () => loadDashboardData());
+  document.getElementById("to-date").addEventListener("input", () => loadDashboardData());
   document.getElementById("time-from").addEventListener("change", () => loadDashboardData());
   document.getElementById("time-to").addEventListener("change", () => loadDashboardData());
 
-  // Clear buttons
-  document.getElementById("stop-clear").addEventListener("click", () => {
-    if (stopSelect) stopSelect.setValue(""); // onChange will trigger loadDashboardData
-  });
+  // Clear buttons for time filters
   document.getElementById("time-from-clear").addEventListener("click", () => {
     document.getElementById("time-from").value = "";
     loadDashboardData();
@@ -339,21 +329,12 @@ async function loadDashboardData() {
       fetchJSON(`facets?${params}`, { signal }),
     ]);
 
-    // Update all dropdowns from facets (suppress onChange to avoid recursive calls)
+    // Update route/headsign dropdowns from facets (suppress onChange to avoid recursive calls)
+    // The stop dropdown is intentionally NOT refreshed here — it is populated once at
+    // init time and clearing it mid-session would reset any search text the user is typing.
     _updatingDropdowns = true;
     let needsFollowUpLoad = false;
     try {
-      // Update stop dropdown
-      if (stopSelect) {
-        const currentStop = stopSelect.getValue();
-        const allStopsOption = { value: "", name: "All stops", id: "" };
-        stopSelect.clearOptions();
-        stopSelect.addOptions([allStopsOption, ...facets.stops.map((s) => ({ value: s.value, name: s.name, id: s.value }))]);
-        const stopStillValid = currentStop === "" || facets.stops.some((s) => s.value === currentStop);
-        stopSelect.setValue(stopStillValid ? currentStop : "", true);
-        if (!stopStillValid && currentStop !== "") needsFollowUpLoad = true;
-      }
-
       // Update route selector
       if (routeSelect) {
         const currentRoute = routeSelect.getValue();
