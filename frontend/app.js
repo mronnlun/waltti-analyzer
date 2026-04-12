@@ -185,7 +185,7 @@ async function renderDashboard(container) {
         <div class="filter-row-stop">
           <label for="stop-select">Stop</label>
           <select id="stop-select"><option value="">Loading…</option></select>
-          <button type="button" class="filter-clear-btn" id="stop-clear" title="Show all stops">×</button>
+          <button type="button" class="filter-clear-btn" id="stop-clear" title="Show all stops" aria-label="Show all stops">×</button>
         </div>
         <div class="filter-row-options">
           <label>From <input type="date" id="from-date" value="${daysAgo(5)}"></label>
@@ -201,9 +201,9 @@ async function renderDashboard(container) {
         </div>
         <div class="filter-row-time">
           <label>Time from <input type="time" id="time-from"></label>
-          <button type="button" class="filter-clear-btn" id="time-from-clear" title="Clear time from">×</button>
+          <button type="button" class="filter-clear-btn" id="time-from-clear" title="Clear time from" aria-label="Clear time from">×</button>
           <label>Time to <input type="time" id="time-to"></label>
-          <button type="button" class="filter-clear-btn" id="time-to-clear" title="Clear time to">×</button>
+          <button type="button" class="filter-clear-btn" id="time-to-clear" title="Clear time to" aria-label="Clear time to">×</button>
           <span class="filter-hint" title="Filter departures by scheduled time of day">?</span>
         </div>
         <div class="filter-status">
@@ -341,6 +341,7 @@ async function loadDashboardData() {
 
     // Update all dropdowns from facets (suppress onChange to avoid recursive calls)
     _updatingDropdowns = true;
+    let needsFollowUpLoad = false;
     try {
       // Update stop dropdown
       if (stopSelect) {
@@ -350,6 +351,7 @@ async function loadDashboardData() {
         stopSelect.addOptions([allStopsOption, ...facets.stops.map((s) => ({ value: s.value, name: s.name, id: s.value }))]);
         const stopStillValid = currentStop === "" || facets.stops.some((s) => s.value === currentStop);
         stopSelect.setValue(stopStillValid ? currentStop : "", true);
+        if (!stopStillValid && currentStop !== "") needsFollowUpLoad = true;
       }
 
       // Update route selector
@@ -361,6 +363,7 @@ async function loadDashboardData() {
           routeSelect.setValue(currentRoute, true);
         } else {
           routeSelect.clear(true);
+          if (currentRoute) needsFollowUpLoad = true;
         }
       }
 
@@ -373,10 +376,18 @@ async function loadDashboardData() {
           headsignSelect.setValue(currentHeadsign, true);
         } else {
           headsignSelect.clear(true);
+          if (currentHeadsign) needsFollowUpLoad = true;
         }
       }
     } finally {
       _updatingDropdowns = false;
+    }
+
+    // If any filter was auto-cleared (stale selection no longer valid), skip
+    // rendering stale results and immediately reload with the corrected state.
+    if (needsFollowUpLoad) {
+      loadDashboardData();
+      return;
     }
 
     document.getElementById("action-status").textContent = "";
