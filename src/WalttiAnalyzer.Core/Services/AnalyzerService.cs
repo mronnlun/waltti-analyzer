@@ -54,7 +54,8 @@ public class AnalyzerService
 
     public async Task<Dictionary<string, object?>> GetSummaryAsync(string? stopId,
         string startDate, string endDate, string? route = null,
-        int? timeFrom = null, int? timeTo = null, string? feedId = null, string? headsign = null)
+        int? timeFrom = null, int? timeTo = null, string? feedId = null, string? headsign = null,
+        CancellationToken ct = default)
     {
         var startParsed = TryParseDateToInt(startDate);
         var endParsed = TryParseDateToInt(endDate);
@@ -79,7 +80,7 @@ public class AnalyzerService
             delaySource: r.GetInt32(1),
             serviceDate: r.GetInt32(2),
             state: r.IsDBNull(3) ? null : r.GetString(3)
-        ));
+        ), ct);
 
         if (rows.Count == 0)
             return new Dictionary<string, object?>
@@ -142,7 +143,8 @@ public class AnalyzerService
 
     public async Task<List<Dictionary<string, object?>>> GetRouteBreakdownAsync(string? stopId,
         string startDate, string endDate, string? route = null,
-        int? timeFrom = null, int? timeTo = null, string? feedId = null, string? headsign = null)
+        int? timeFrom = null, int? timeTo = null, string? feedId = null, string? headsign = null,
+        CancellationToken ct = default)
     {
         var startParsed = TryParseDateToInt(startDate);
         var endParsed = TryParseDateToInt(endDate);
@@ -166,7 +168,7 @@ public class AnalyzerService
             delay: r.IsDBNull(1) ? (int?)null : r.GetInt32(1),
             delaySource: r.GetInt32(2),
             state: r.IsDBNull(3) ? null : r.GetString(3)
-        ));
+        ), ct);
 
         var byRoute = raw.GroupBy(r => r.routeName);
         var result = new List<Dictionary<string, object?>>();
@@ -204,7 +206,8 @@ public class AnalyzerService
 
     public async Task<List<Dictionary<string, object?>>> GetDelayByHourAsync(string? stopId,
         string startDate, string endDate, string? route = null,
-        int? timeFrom = null, int? timeTo = null, string? feedId = null, string? headsign = null)
+        int? timeFrom = null, int? timeTo = null, string? feedId = null, string? headsign = null,
+        CancellationToken ct = default)
     {
         var startParsed = TryParseDateToInt(startDate);
         var endParsed = TryParseDateToInt(endDate);
@@ -228,7 +231,7 @@ public class AnalyzerService
             delay: r.IsDBNull(1) ? (int?)null : r.GetInt32(1),
             delaySource: r.GetInt32(2),
             state: r.IsDBNull(3) ? null : r.GetString(3)
-        ));
+        ), ct);
 
         var result = new List<Dictionary<string, object?>>();
         foreach (var grp in raw.GroupBy(r => r.hour).OrderBy(g => g.Key))
@@ -286,11 +289,12 @@ public class AnalyzerService
     }
 
     private async Task<List<T>> QueryRawAsync<T>(string sql,
-        List<(string Name, object? Value)> parms, Func<DbDataReader, T> mapper)
+        List<(string Name, object? Value)> parms, Func<DbDataReader, T> mapper,
+        CancellationToken ct = default)
     {
         var conn = _context.Database.GetDbConnection();
         bool wasOpen = conn.State == ConnectionState.Open;
-        if (!wasOpen) await conn.OpenAsync();
+        if (!wasOpen) await conn.OpenAsync(ct);
         try
         {
             using var cmd = conn.CreateCommand();
@@ -302,9 +306,9 @@ public class AnalyzerService
                 p.Value = val ?? DBNull.Value;
                 cmd.Parameters.Add(p);
             }
-            using var reader = await cmd.ExecuteReaderAsync();
+            using var reader = await cmd.ExecuteReaderAsync(ct);
             var result = new List<T>();
-            while (await reader.ReadAsync())
+            while (await reader.ReadAsync(ct))
                 result.Add(mapper(reader));
             return result;
         }

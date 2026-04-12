@@ -103,6 +103,8 @@ let hourlyChart = null;
 let stopSelect = null;
 let routeSelect = null;
 let headsignSelect = null;
+let currentAbortController = null;
+let _updatingDropdowns = false;
 
 // Per-Route Breakdown sort state
 let routeSortCol = null;
@@ -179,10 +181,11 @@ async function renderDashboard(container) {
     <h1>Dashboard</h1>
     <p class="subtitle">Bus punctuality analysis for Vaasa</p>
     <div class="controls">
-      <form class="filter-form" id="dash-form">
+      <div class="filter-form" id="dash-form">
         <div class="filter-row-stop">
           <label for="stop-select">Stop</label>
           <select id="stop-select"><option value="">Loading…</option></select>
+          <button type="button" class="filter-clear-btn" id="stop-clear" title="Show all stops">×</button>
         </div>
         <div class="filter-row-options">
           <label>From <input type="date" id="from-date" value="${daysAgo(5)}"></label>
@@ -198,21 +201,25 @@ async function renderDashboard(container) {
         </div>
         <div class="filter-row-time">
           <label>Time from <input type="time" id="time-from"></label>
+          <button type="button" class="filter-clear-btn" id="time-from-clear" title="Clear time from">×</button>
           <label>Time to <input type="time" id="time-to"></label>
+          <button type="button" class="filter-clear-btn" id="time-to-clear" title="Clear time to">×</button>
           <span class="filter-hint" title="Filter departures by scheduled time of day">?</span>
         </div>
-        <div class="actions">
-          <button type="submit">Analyze</button>
+        <div class="filter-status">
           <span id="action-status"></span>
         </div>
-      </form>
+      </div>
     </div>
     <div id="dash-results"></div>
   `;
 
+  _updatingDropdowns = true;
+
   routeSelect = new TomSelect("#route-select", {
     placeholder: "All routes",
     plugins: ["clear_button"],
+    onChange: () => { if (!_updatingDropdowns) loadDashboardData(); },
     render: {
       option: function (data, escape) {
         return `<div class="option" title="${escape(data.text)}">${escape(data.text)}</div>`;
@@ -223,6 +230,7 @@ async function renderDashboard(container) {
   headsignSelect = new TomSelect("#headsign-select", {
     placeholder: "All headsigns",
     plugins: ["clear_button"],
+    onChange: () => { if (!_updatingDropdowns) loadDashboardData(); },
     render: {
       option: function (data, escape) {
         return `<div class="option" title="${escape(data.text)}">${escape(data.text)}</div>`;
@@ -244,6 +252,7 @@ async function renderDashboard(container) {
       searchField: ["name", "id"],
       options: [allStopsOption, ...stops.map((s) => ({ value: s.gtfs_id, name: s.name, id: s.gtfs_id }))],
       items: status.default_stop_id ? [status.default_stop_id] : [""],
+      onChange: () => { if (!_updatingDropdowns) loadDashboardData(); },
       render: {
         option: function (data, escape) {
           if (data.value === "") {
@@ -267,17 +276,37 @@ async function renderDashboard(container) {
       '<option value="">Failed to load stops</option>';
   }
 
-  // Form submit
-  document.getElementById("dash-form").addEventListener("submit", async (e) => {
-    e.preventDefault();
-    await loadDashboardData();
+  _updatingDropdowns = false;
+
+  // Wire up date / time change listeners
+  document.getElementById("from-date").addEventListener("change", () => loadDashboardData());
+  document.getElementById("to-date").addEventListener("change", () => loadDashboardData());
+  document.getElementById("time-from").addEventListener("change", () => loadDashboardData());
+  document.getElementById("time-to").addEventListener("change", () => loadDashboardData());
+
+  // Clear buttons
+  document.getElementById("stop-clear").addEventListener("click", () => {
+    if (stopSelect) stopSelect.setValue(""); // onChange will trigger loadDashboardData
+  });
+  document.getElementById("time-from-clear").addEventListener("click", () => {
+    document.getElementById("time-from").value = "";
+    loadDashboardData();
+  });
+  document.getElementById("time-to-clear").addEventListener("click", () => {
+    document.getElementById("time-to").value = "";
+    loadDashboardData();
   });
 
-  // Auto-load data for the initially selected stop
+  // Initial data load
   await loadDashboardData();
 }
 
 async function loadDashboardData() {
+  // Cancel any in-flight request
+  if (currentAbortController) currentAbortController.abort();
+  currentAbortController = new AbortController();
+  const signal = currentAbortController.signal;
+
   const stopId = document.getElementById("stop-select").value;
   const from = document.getElementById("from-date").value;
   const to = document.getElementById("to-date").value;
@@ -302,48 +331,58 @@ async function loadDashboardData() {
   if (timeTo) params.set("time_to", timeTo);
 
   try {
-    const routesEndpoint = allStops
-      ? "routes"
-      : `routes-for-stop?stop_id=${encodeURIComponent(stopId)}`;
-    const headsignsEndpoint = allStops
-      ? "headsigns"
-      : `headsigns-for-stop?stop_id=${encodeURIComponent(stopId)}`;
-    const [summary, routes, hourly, observations, stopRoutes, stopHeadsigns] = await Promise.all([
-      fetchJSON(`summary?${params}`),
-      fetchJSON(`route-breakdown?${params}`),
-      fetchJSON(`delay-by-hour?${params}`),
-      fetchJSON(`observations?${params}`),
-      fetchJSON(routesEndpoint),
-      fetchJSON(headsignsEndpoint),
+    const [summary, routes, hourly, observations, facets] = await Promise.all([
+      fetchJSON(`summary?${params}`, { signal }),
+      fetchJSON(`route-breakdown?${params}`, { signal }),
+      fetchJSON(`delay-by-hour?${params}`, { signal }),
+      fetchJSON(`observations?${params}`, { signal }),
+      fetchJSON(`facets?${params}`, { signal }),
     ]);
 
-    // Update route selector
-    if (routeSelect) {
-      const currentRoute = routeSelect.getValue();
-      routeSelect.clearOptions();
-      routeSelect.addOptions(stopRoutes.map((r) => ({ value: r, text: r })));
-      if (stopRoutes.includes(currentRoute)) {
-        routeSelect.setValue(currentRoute, true);
-      } else {
-        routeSelect.clear(true);
+    // Update all dropdowns from facets (suppress onChange to avoid recursive calls)
+    _updatingDropdowns = true;
+    try {
+      // Update stop dropdown
+      if (stopSelect) {
+        const currentStop = stopSelect.getValue();
+        const allStopsOption = { value: "", name: "All stops", id: "" };
+        stopSelect.clearOptions();
+        stopSelect.addOptions([allStopsOption, ...facets.stops.map((s) => ({ value: s.value, name: s.name, id: s.value }))]);
+        const stopStillValid = currentStop === "" || facets.stops.some((s) => s.value === currentStop);
+        stopSelect.setValue(stopStillValid ? currentStop : "", true);
       }
-    }
 
-    // Update headsign selector
-    if (headsignSelect) {
-      const currentHeadsign = headsignSelect.getValue();
-      headsignSelect.clearOptions();
-      headsignSelect.addOptions(stopHeadsigns.map((h) => ({ value: h, text: h })));
-      if (stopHeadsigns.includes(currentHeadsign)) {
-        headsignSelect.setValue(currentHeadsign, true);
-      } else {
-        headsignSelect.clear(true);
+      // Update route selector
+      if (routeSelect) {
+        const currentRoute = routeSelect.getValue();
+        routeSelect.clearOptions();
+        routeSelect.addOptions(facets.routes.map((r) => ({ value: r, text: r })));
+        if (facets.routes.includes(currentRoute)) {
+          routeSelect.setValue(currentRoute, true);
+        } else {
+          routeSelect.clear(true);
+        }
       }
+
+      // Update headsign selector
+      if (headsignSelect) {
+        const currentHeadsign = headsignSelect.getValue();
+        headsignSelect.clearOptions();
+        headsignSelect.addOptions(facets.headsigns.map((h) => ({ value: h, text: h })));
+        if (facets.headsigns.includes(currentHeadsign)) {
+          headsignSelect.setValue(currentHeadsign, true);
+        } else {
+          headsignSelect.clear(true);
+        }
+      }
+    } finally {
+      _updatingDropdowns = false;
     }
 
     document.getElementById("action-status").textContent = "";
     renderDashboardResults(summary, routes, hourly, observations, allStops);
   } catch (err) {
+    if (err.name === "AbortError") return;
     document.getElementById("action-status").textContent = `Error: ${err.message}`;
   }
 }

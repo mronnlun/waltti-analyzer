@@ -276,12 +276,12 @@ public class DatabaseService
     public async Task<Stop?> GetStopAsync(string gtfsId) =>
         await _context.Stops.FirstOrDefaultAsync(s => s.GtfsId == gtfsId);
 
-    public async Task<List<Stop>> GetAllStopsAsync(string? feedId = null)
+    public async Task<List<Stop>> GetAllStopsAsync(string? feedId = null, CancellationToken ct = default)
     {
         var q = _context.Stops.AsQueryable();
         if (!string.IsNullOrEmpty(feedId))
             q = q.Where(s => s.GtfsId.StartsWith(feedId + ":"));
-        return await q.OrderBy(s => s.Name).ToListAsync();
+        return await q.OrderBy(s => s.Name).ToListAsync(ct);
     }
 
     public async Task<List<string>> GetAllStopIdsAsync(string? feedId = null) =>
@@ -327,38 +327,38 @@ public class DatabaseService
                 r.GetValueOrDefault("mode") as string);
     }
 
-    public async Task<List<string>> GetAllRoutesAsync(string? feedId = null)
+    public async Task<List<string>> GetAllRoutesAsync(string? feedId = null, CancellationToken ct = default)
     {
         var q = _context.Routes.Where(r => r.ShortName != null);
         if (!string.IsNullOrEmpty(feedId))
             q = q.Where(r => r.GtfsId.StartsWith(feedId + ":"));
-        return await q.Select(r => r.ShortName!).Distinct().OrderBy(r => r).ToListAsync();
+        return await q.Select(r => r.ShortName!).Distinct().OrderBy(r => r).ToListAsync(ct);
     }
 
-    public async Task<List<string>> GetRoutesForStopAsync(string stopId)
+    public async Task<List<string>> GetRoutesForStopAsync(string stopId, CancellationToken ct = default)
     {
         return await _context.Observations
             .Where(o => o.Stop!.GtfsId == stopId)
             .Select(o => o.Trip!.Route!.ShortName!)
             .Where(n => n != null)
-            .Distinct().OrderBy(r => r).ToListAsync();
+            .Distinct().OrderBy(r => r).ToListAsync(ct);
     }
 
-    public async Task<List<string>> GetAllHeadsignsAsync(string? feedId = null)
+    public async Task<List<string>> GetAllHeadsignsAsync(string? feedId = null, CancellationToken ct = default)
     {
         var q = _context.Trips.Where(t => t.Headsign != null);
         if (!string.IsNullOrEmpty(feedId))
             q = q.Where(t => t.Route!.GtfsId.StartsWith(feedId + ":"));
-        return await q.Select(t => t.Headsign!).Distinct().OrderBy(h => h).ToListAsync();
+        return await q.Select(t => t.Headsign!).Distinct().OrderBy(h => h).ToListAsync(ct);
     }
 
-    public async Task<List<string>> GetHeadsignsForStopAsync(string stopId)
+    public async Task<List<string>> GetHeadsignsForStopAsync(string stopId, CancellationToken ct = default)
     {
         return await _context.Observations
             .Where(o => o.Stop!.GtfsId == stopId)
             .Select(o => o.Trip!.Headsign!)
             .Where(h => h != null)
-            .Distinct().OrderBy(h => h).ToListAsync();
+            .Distinct().OrderBy(h => h).ToListAsync(ct);
     }
 
     // -----------------------------------------------------------------------
@@ -488,7 +488,8 @@ public class DatabaseService
 
     public async Task<List<Observation>> GetObservationsAsync(string? stopId,
         int startDate, int endDate, string? route = null,
-        int? timeFrom = null, int? timeTo = null, string? feedId = null, string? headsign = null)
+        int? timeFrom = null, int? timeTo = null, string? feedId = null, string? headsign = null,
+        CancellationToken ct = default)
     {
         var allStops = string.IsNullOrEmpty(stopId);
         var parms = new List<(string Name, object? Value)>
@@ -502,10 +503,11 @@ public class DatabaseService
         AppendPastOnlyFilter(ref sql, parms);
         sql += " ORDER BY o.service_date DESC, o.scheduled_departure DESC";
         sql += IsSqlite ? " LIMIT 300" : " OFFSET 0 ROWS FETCH NEXT 300 ROWS ONLY";
-        return await ReadObservationsRawAsync(sql, parms, includeStopName: allStops);
+        return await ReadObservationsRawAsync(sql, parms, includeStopName: allStops, ct: ct);
     }
 
-    public async Task<List<Observation>> GetLatestObservationsAsync(int limit = 300, string? feedId = null)
+    public async Task<List<Observation>> GetLatestObservationsAsync(int limit = 300, string? feedId = null,
+        CancellationToken ct = default)
     {
         var parms = new List<(string Name, object? Value)>();
         var sql = $"SELECT {ObsColumns}, s.name AS stop_name {ObsJoins} WHERE o.delay_source>=1";
@@ -513,7 +515,7 @@ public class DatabaseService
         sql += " ORDER BY o.service_date DESC, o.scheduled_departure DESC";
         sql += IsSqlite ? " LIMIT @lim" : " OFFSET 0 ROWS FETCH NEXT @lim ROWS ONLY";
         parms.Add(("@lim", limit));
-        return await ReadObservationsRawAsync(sql, parms, includeStopName: true);
+        return await ReadObservationsRawAsync(sql, parms, includeStopName: true, ct: ct);
     }
 
     // -----------------------------------------------------------------------
@@ -536,11 +538,12 @@ public class DatabaseService
         await _context.SaveChangesAsync();
     }
 
-    public async Task<CollectionLogEntry?> GetLatestCollectionAsync(string stopId, string queryType) =>
+    public async Task<CollectionLogEntry?> GetLatestCollectionAsync(string stopId, string queryType,
+        CancellationToken ct = default) =>
         await _context.CollectionLog
             .Where(l => l.StopGtfsId == stopId && l.QueryType == queryType)
             .OrderByDescending(l => l.QueriedAt)
-            .FirstOrDefaultAsync();
+            .FirstOrDefaultAsync(ct);
 
     // -----------------------------------------------------------------------
     // Helpers
@@ -593,11 +596,12 @@ public class DatabaseService
     }
 
     private async Task<List<Observation>> ReadObservationsRawAsync(
-        string sql, List<(string Name, object? Value)> parms, bool includeStopName)
+        string sql, List<(string Name, object? Value)> parms, bool includeStopName,
+        CancellationToken ct = default)
     {
         var conn = _context.Database.GetDbConnection();
         bool wasOpen = conn.State == ConnectionState.Open;
-        if (!wasOpen) await conn.OpenAsync();
+        if (!wasOpen) await conn.OpenAsync(ct);
         try
         {
             using var cmd = conn.CreateCommand();
@@ -609,9 +613,9 @@ public class DatabaseService
                 p.Value = val ?? DBNull.Value;
                 cmd.Parameters.Add(p);
             }
-            using var reader = await cmd.ExecuteReaderAsync();
+            using var reader = await cmd.ExecuteReaderAsync(ct);
             var result = new List<Observation>();
-            while (await reader.ReadAsync())
+            while (await reader.ReadAsync(ct))
             {
                 var obs = new Observation
                 {
@@ -640,5 +644,87 @@ public class DatabaseService
         {
             if (!wasOpen) await conn.CloseAsync();
         }
+    }
+
+    private async Task<List<T>> QueryRawAsync<T>(string sql,
+        List<(string Name, object? Value)> parms, Func<DbDataReader, T> mapper,
+        CancellationToken ct = default)
+    {
+        var conn = _context.Database.GetDbConnection();
+        bool wasOpen = conn.State == ConnectionState.Open;
+        if (!wasOpen) await conn.OpenAsync(ct);
+        try
+        {
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = sql;
+            foreach (var (name, val) in parms)
+            {
+                var p = cmd.CreateParameter();
+                p.ParameterName = name;
+                p.Value = val ?? DBNull.Value;
+                cmd.Parameters.Add(p);
+            }
+            using var reader = await cmd.ExecuteReaderAsync(ct);
+            var result = new List<T>();
+            while (await reader.ReadAsync(ct))
+                result.Add(mapper(reader));
+            return result;
+        }
+        finally
+        {
+            if (!wasOpen) await conn.CloseAsync();
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // Faceted filter options
+    // -----------------------------------------------------------------------
+
+    public async Task<object> GetFacetsAsync(string? stopId, string? route, string? headsign,
+        int start, int end, int? timeFrom, int? timeTo, string? feedId,
+        CancellationToken ct = default)
+    {
+        const string baseJoins = @"FROM observations o
+            JOIN stops s ON o.stop_id = s.id
+            JOIN trips t ON o.trip_id = t.id
+            JOIN routes r ON t.route_id = r.id";
+
+        // Stops facet: filtered by route + headsign (not by stop), scoped to feedId
+        var stopsSql = $"SELECT DISTINCT s.gtfs_id, s.name {baseJoins} WHERE o.service_date>=@start AND o.service_date<=@end";
+        var stopsParms = new List<(string, object?)> { ("@start", start), ("@end", end) };
+        if (!string.IsNullOrEmpty(feedId)) { stopsSql += " AND s.gtfs_id LIKE @feed"; stopsParms.Add(("@feed", $"{feedId}:%")); }
+        AppendFilters(ref stopsSql, stopsParms, route, timeFrom, timeTo, headsign);
+        AppendPastOnlyFilter(ref stopsSql, stopsParms);
+        stopsSql += " ORDER BY s.name";
+
+        // Routes facet: filtered by stop + headsign (not by route)
+        var routesSql = $"SELECT DISTINCT r.short_name {baseJoins} WHERE r.short_name IS NOT NULL AND o.service_date>=@start AND o.service_date<=@end";
+        var routesParms = new List<(string, object?)> { ("@start", start), ("@end", end) };
+        AppendStopFilter(ref routesSql, routesParms, stopId, feedId);
+        AppendFilters(ref routesSql, routesParms, null, timeFrom, timeTo, headsign);
+        AppendPastOnlyFilter(ref routesSql, routesParms);
+        routesSql += " ORDER BY r.short_name";
+
+        // Headsigns facet: filtered by stop + route (not by headsign)
+        var headsignsSql = $"SELECT DISTINCT t.headsign {baseJoins} WHERE t.headsign IS NOT NULL AND o.service_date>=@start AND o.service_date<=@end";
+        var headsignsParms = new List<(string, object?)> { ("@start", start), ("@end", end) };
+        AppendStopFilter(ref headsignsSql, headsignsParms, stopId, feedId);
+        AppendFilters(ref headsignsSql, headsignsParms, route, timeFrom, timeTo, null);
+        AppendPastOnlyFilter(ref headsignsSql, headsignsParms);
+        headsignsSql += " ORDER BY t.headsign";
+
+        var stops = await QueryRawAsync(stopsSql, stopsParms,
+            r => new { value = r.GetString(0), name = r.GetString(1) }, ct);
+        var routes = await QueryRawAsync(routesSql, routesParms,
+            r => r.GetString(0), ct);
+        var headsigns = await QueryRawAsync(headsignsSql, headsignsParms,
+            r => r.IsDBNull(0) ? null : r.GetString(0), ct);
+
+        return new
+        {
+            stops,
+            routes,
+            headsigns = headsigns.Where(h => h != null).ToList()
+        };
     }
 }
