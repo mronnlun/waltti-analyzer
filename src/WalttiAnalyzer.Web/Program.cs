@@ -1,4 +1,5 @@
 using Azure.Monitor.OpenTelemetry.AspNetCore;
+using OpenTelemetry.Trace;
 using System.Text.Json.Serialization;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
@@ -6,6 +7,7 @@ using WalttiAnalyzer.Core.Data;
 using WalttiAnalyzer.Core.Models;
 using WalttiAnalyzer.Core.Services;
 using WalttiAnalyzer.Web.Services;
+using WalttiAnalyzer.Web.Telemetry;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -57,8 +59,15 @@ builder.Services.AddHostedService<DataSyncBackgroundService>();
 // -----------------------------------------------------------------------
 
 builder.Services.AddOpenTelemetry()
-    .UseAzureMonitor()
-    .WithTracing(tracing => tracing.AddSource(DataSyncBackgroundService.ActivitySource.Name));
+    .WithTracing(tracing =>
+    {
+        // Filter out fast, successful DB dependency telemetry to reduce
+        // Application Insights / Log Analytics ingestion volume.
+        // Must be registered before UseAzureMonitor so it runs before the exporter.
+        tracing.AddProcessor(new FastDbDependencyFilterProcessor());
+        tracing.AddSource(DataSyncBackgroundService.ActivitySource.Name);
+    })
+    .UseAzureMonitor();
 
 // -----------------------------------------------------------------------
 // Health checks
