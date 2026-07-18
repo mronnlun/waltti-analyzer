@@ -26,13 +26,11 @@ param sqlAdminLogin string = 'walttidbadmin'
 @secure()
 param sqlAdminPassword string
 
-@description('Monthly cost budget in the billing currency (e.g. EUR)')
-param budgetAmount int = 30
+@description('Monthly cost budget in the billing currency (e.g. EUR). Matches the currently configured budget — lowering it here overwrites manual changes made in the portal.')
+param budgetAmount int = 43
 
-@description('Current date (injected at deploy time via utcNow) — used to compute the budget start date')
-param currentDate string = utcNow('yyyy-MM-dd')
-
-var budgetStartDate = '${substring(currentDate, 0, 7)}-01'
+@description('Budget period start date (first of a month). Must stay fixed once the budget exists: Azure rejects any update that changes a budget start date, so deriving this from the deployment date breaks every redeploy in a later month.')
+param budgetStartDate string = '2026-04-01'
 
 @description('Email address for budget alert notifications (leave empty to skip budget alerts)')
 param notificationEmail string = ''
