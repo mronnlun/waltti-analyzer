@@ -284,8 +284,21 @@ public class DatabaseService
         return await q.OrderBy(s => s.Name).ToListAsync(ct);
     }
 
-    public async Task<List<string>> GetAllStopIdsAsync(string? feedId = null) =>
-        (await GetAllStopsAsync(feedId)).Select(s => s.GtfsId).ToList();
+    /// <summary>
+    /// Stop IDs for polling, ordered by stop name. When <paramref name="updatedSinceUnix"/>
+    /// is set, only stops whose updated_at is at or after that time are returned —
+    /// discovery refreshes updated_at for every stop still present in the feed, so this
+    /// excludes stops that have been removed from the feed.
+    /// </summary>
+    public async Task<List<string>> GetAllStopIdsAsync(string? feedId = null, long? updatedSinceUnix = null)
+    {
+        var q = _context.Stops.AsQueryable();
+        if (!string.IsNullOrEmpty(feedId))
+            q = q.Where(s => s.GtfsId.StartsWith(feedId + ":"));
+        if (updatedSinceUnix.HasValue)
+            q = q.Where(s => s.UpdatedAt >= updatedSinceUnix.Value);
+        return await q.OrderBy(s => s.Name).Select(s => s.GtfsId).ToListAsync();
+    }
 
     // -----------------------------------------------------------------------
     // Route operations

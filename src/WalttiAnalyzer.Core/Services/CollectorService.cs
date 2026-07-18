@@ -17,6 +17,13 @@ public class CollectorService
 
     private const int RealtimeBatchSize = 50;
 
+    /// <summary>
+    /// Stops whose discovery timestamp is older than this are considered removed from
+    /// the feed and are excluded from realtime polling. Discovery runs hourly and
+    /// refreshes updated_at for every stop still present in the feed.
+    /// </summary>
+    private const long StaleStopMaxAgeSeconds = 7 * 24 * 3600;
+
     public CollectorService(ILogger<CollectorService> logger, DatabaseService db,
         DigitransitClient client, IOptions<WalttiSettings> settings)
     {
@@ -78,11 +85,14 @@ public class CollectorService
 
         try
         {
-            var queryIds = await _db.GetAllStopIdsAsync(feedId);
+            // Only poll stops still present in the feed; stops that discovery has not
+            // refreshed within StaleStopMaxAgeSeconds return null from the API.
+            var activeSince = nowUtc - StaleStopMaxAgeSeconds;
+            var queryIds = await _db.GetAllStopIdsAsync(feedId, updatedSinceUnix: activeSince);
             if (queryIds.Count == 0)
             {
                 await DiscoverStopsAsync();
-                queryIds = await _db.GetAllStopIdsAsync(feedId);
+                queryIds = await _db.GetAllStopIdsAsync(feedId, updatedSinceUnix: activeSince);
                 if (queryIds.Count == 0)
                     return new Dictionary<string, object?>
                     {
@@ -92,36 +102,54 @@ public class CollectorService
             }
 
             int totalMeasured = 0, totalPropagated = 0, totalStopsPolled = 0;
+            int totalBatches = 0, failedBatches = 0;
 
             for (int i = 0; i < queryIds.Count; i += RealtimeBatchSize)
             {
+                totalBatches++;
                 var batchIds = queryIds.Skip(i).Take(RealtimeBatchSize).ToList();
-                var stopsData = await _client.FetchSlidingWindowAsync(batchIds, windowStart, timeRange);
-                totalStopsPolled += stopsData.Count;
 
-                var (routes, trips, observations, measured, propagated) =
-                    ProcessSlidingWindowBatch(stopsData, nowUtc);
+                // One bad batch must not abort the remaining batches: realtime data is
+                // unrecoverable, so collect everything we can and report failures.
+                try
+                {
+                    var stopsData = await _client.FetchSlidingWindowAsync(batchIds, windowStart, timeRange);
+                    totalStopsPolled += stopsData.Count;
 
-                if (routes.Count > 0) await _db.UpsertRoutesBatchAsync(routes.Values.ToList());
-                if (trips.Count > 0) await _db.UpsertTripsBatchAsync(trips.Values.ToList());
-                if (observations.Count > 0) await _db.UpsertObservationsBatchAsync(observations);
+                    var (routes, trips, observations, measured, propagated) =
+                        ProcessSlidingWindowBatch(stopsData, nowUtc);
 
-                totalMeasured += measured;
-                totalPropagated += propagated;
+                    if (routes.Count > 0) await _db.UpsertRoutesBatchAsync(routes.Values.ToList());
+                    if (trips.Count > 0) await _db.UpsertTripsBatchAsync(trips.Values.ToList());
+                    if (observations.Count > 0) await _db.UpsertObservationsBatchAsync(observations);
+
+                    totalMeasured += measured;
+                    totalPropagated += propagated;
+                }
+                catch (Exception ex)
+                {
+                    failedBatches++;
+                    _logger.LogError(ex, "Sliding window batch {Batch} failed (stops {First}..{Last})",
+                        totalBatches, batchIds.First(), batchIds.Last());
+                }
             }
 
-            await _db.LogCollectionAsync(feedId, "realtime", departuresFound: totalMeasured + totalPropagated);
+            var batchError = failedBatches > 0 ? $"{failedBatches}/{totalBatches} batches failed" : null;
+            await _db.LogCollectionAsync(feedId, "realtime",
+                departuresFound: totalMeasured + totalPropagated, error: batchError);
             _logger.LogInformation(
-                "Sliding window poll: {Measured} measured + {Propagated} propagated across {Stops} stops",
-                totalMeasured, totalPropagated, totalStopsPolled);
+                "Sliding window poll: {Measured} measured + {Propagated} propagated across {Stops} stops ({Failed}/{Total} batches failed)",
+                totalMeasured, totalPropagated, totalStopsPolled, failedBatches, totalBatches);
 
-            return new Dictionary<string, object?>
+            var result = new Dictionary<string, object?>
             {
-                ["status"] = "ok",
+                ["status"] = failedBatches == totalBatches && totalBatches > 0 ? "error" : "ok",
                 ["measured"] = totalMeasured,
                 ["propagated"] = totalPropagated,
                 ["stops_polled"] = totalStopsPolled
             };
+            if (batchError != null) result["failed_batches"] = failedBatches;
+            return result;
         }
         catch (Exception ex)
         {
@@ -161,6 +189,9 @@ public class CollectorService
 
         foreach (var stopData in stopsData)
         {
+            // The API returns null for stops that no longer exist in the feed.
+            if (stopData.ValueKind != JsonValueKind.Object) continue;
+
             var stopGtfsId = stopData.GetProperty("gtfsId").GetString()!;
             var stoptimes = DigitransitClient.GetArrayProperty(stopData, "stoptimesWithoutPatterns");
 
