@@ -83,7 +83,25 @@ public class DigitransitClient
         var idsJson = JsonSerializer.Serialize(stopIds);
         var query = string.Format(QuerySlidingWindow, idsJson, startTime, timeRange);
         var data = await QueryAsync(query, retries: 2, timeoutSeconds: 120);
-        return GetArrayProperty(data, "stops");
+        var stops = GetArrayProperty(data, "stops");
+
+        // stops(ids:) returns a positional null for every requested ID that is not in
+        // the current feed (e.g. a stop removed by a timetable change). Filter them out
+        // so downstream processing only ever sees real stop objects.
+        var valid = new List<JsonElement>(stops.Count);
+        for (int i = 0; i < stops.Count; i++)
+        {
+            if (stops[i].ValueKind == JsonValueKind.Object)
+            {
+                valid.Add(stops[i]);
+            }
+            else
+            {
+                var requestedId = i < stopIds.Count ? stopIds[i] : $"(index {i})";
+                _logger.LogWarning("Stop {StopId} no longer exists in the feed — skipping", requestedId);
+            }
+        }
+        return valid;
     }
 
     public async Task<(List<Dictionary<string, object?>> Stops, List<Dictionary<string, object?>> Routes)>

@@ -170,12 +170,11 @@ resource webApp 'Microsoft.Web/sites@2025-03-01' = {
           value: defaultStopId
         }
         {
+          // Used by the in-code Azure Monitor OpenTelemetry distro (UseAzureMonitor).
+          // Note: do NOT set ApplicationInsightsAgent_EXTENSION_VERSION here — the
+          // codeless App Service agent would duplicate all telemetry exported by OTel.
           name: 'APPLICATIONINSIGHTS_CONNECTION_STRING'
           value: appInsights.properties.ConnectionString
-        }
-        {
-          name: 'ApplicationInsightsAgent_EXTENSION_VERSION'
-          value: '~3'
         }
       ]
     }
@@ -204,6 +203,64 @@ resource webAppDiagnostics 'Microsoft.Insights/diagnosticSettings@2021-05-01-pre
         enabled: true
       }
     ]
+  }
+}
+
+// --- Action group for operational alerts ---
+resource alertActionGroup 'Microsoft.Insights/actionGroups@2023-01-01' = if (!empty(notificationEmail)) {
+  name: '${projectName}-${env}-ag'
+  location: 'Global'
+  properties: {
+    groupShortName: 'WalttiAlert'
+    enabled: true
+    emailReceivers: [
+      {
+        name: 'primaryEmail'
+        emailAddress: notificationEmail
+        useCommonAlertSchema: true
+      }
+    ]
+  }
+}
+
+// --- Alert: no successful realtime poll in 2 hours ---
+// The sync loop logs "Sliding window poll result: [status, ok], ..." on success.
+// Realtime data is unrecoverable once lost, so silence here means data loss in
+// progress. This fires on constant failure, which the Application Insights
+// "Failure Anomalies" smart detector does not (steady failure is not an anomaly).
+resource pollFailureAlert 'Microsoft.Insights/scheduledQueryRules@2023-12-01' = if (!empty(notificationEmail)) {
+  name: '${projectName}-${env}-alert-pollstopped'
+  location: location
+  properties: {
+    displayName: 'Waltti realtime data collection stopped'
+    description: 'No successful sliding-window poll was logged in the last 2 hours. Realtime delay data is being lost.'
+    severity: 1
+    enabled: true
+    evaluationFrequency: 'PT30M'
+    windowSize: 'PT2H'
+    scopes: [
+      logAnalytics.id
+    ]
+    criteria: {
+      allOf: [
+        {
+          query: 'AppTraces | where Message startswith "Sliding window poll result" | where Message contains "[status, ok]"'
+          timeAggregation: 'Count'
+          operator: 'LessThanOrEqual'
+          threshold: 0
+          failingPeriods: {
+            numberOfEvaluationPeriods: 1
+            minFailingPeriodsToAlert: 1
+          }
+        }
+      ]
+    }
+    autoMitigate: true
+    actions: {
+      actionGroups: [
+        alertActionGroup.id
+      ]
+    }
   }
 }
 
