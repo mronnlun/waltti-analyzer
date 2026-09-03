@@ -1,0 +1,16 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "pwsh -NoProfile -Command \"& (Join-Path (git rev-parse --show-toplevel) '.codex/hooks/pre-push-checks.ps1')\"",
+            "commandWindows": "pwsh -NoProfile -Command \"& (Join-Path (git rev-parse --show-toplevel) '.codex/hooks/pre-push-checks.ps1')\""
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -41,6 +41,7 @@ public class AnalyzerTests : IDisposable
         Assert.Equal(1, summary["static_only"]);
         Assert.Equal(3, summary["on_time"]);
         Assert.Equal(1, summary["slightly_late"]);
+        Assert.Equal(75.0, summary["median_delay_seconds"]);
     }
 
     [Fact]

@@ -88,6 +88,9 @@ public class WalttiDbContext : DbContext
             e.Property(x => x.RealtimeStateId).HasColumnName("realtime_state_id");
             e.HasIndex(x => new { x.StopId, x.TripId, x.ServiceDate }).IsUnique().HasDatabaseName("uq_obs_stop_trip_date");
             e.HasIndex(x => new { x.StopId, x.ServiceDate }).HasDatabaseName("idx_obs_stop_date");
+            e.HasIndex(x => new { x.ServiceDate, x.ScheduledDeparture })
+                .HasDatabaseName("idx_obs_date_report")
+                .IncludeProperties(x => new { x.StopId, x.TripId, x.DepartureDelay, x.DelaySource, x.RealtimeStateId });
             e.HasOne(x => x.Stop).WithMany().HasForeignKey(x => x.StopId);
             e.HasOne(x => x.Trip).WithMany().HasForeignKey(x => x.TripId);
             e.HasOne(x => x.RealtimeStateEntity).WithMany().HasForeignKey(x => x.RealtimeStateId);
@@ -105,6 +108,10 @@ public class WalttiDbContext : DbContext
             e.Property(x => x.DeparturesFound).HasColumnName("departures_found");
             e.Property(x => x.NoService).HasColumnName("no_service").HasDefaultValue(0);
             e.Property(x => x.Error).HasColumnName("error");
+            e.HasIndex(x => x.QueriedAt)
+                .IsDescending()
+                .HasDatabaseName("idx_collection_log_lookup")
+                .IncludeProperties(x => new { x.StopGtfsId, x.QueryType });
         });
     }
 }

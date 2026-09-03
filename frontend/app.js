@@ -321,13 +321,14 @@ async function loadDashboardData() {
   if (timeTo) params.set("time_to", timeTo);
 
   try {
-    const [summary, routes, hourly, observations, facets] = await Promise.all([
-      fetchJSON(`summary?${params}`, { signal }),
-      fetchJSON(`route-breakdown?${params}`, { signal }),
-      fetchJSON(`delay-by-hour?${params}`, { signal }),
-      fetchJSON(`observations?${params}`, { signal }),
-      fetchJSON(`facets?${params}`, { signal }),
-    ]);
+    // Azure SQL Basic has very limited concurrent query capacity. Running these
+    // report queries in parallel makes each one slower and can exhaust the
+    // 30-second command timeout, while sequential execution stays predictable.
+    const summary = await fetchJSON(`summary?${params}`, { signal });
+    const routes = await fetchJSON(`route-breakdown?${params}`, { signal });
+    const hourly = await fetchJSON(`delay-by-hour?${params}`, { signal });
+    const observations = await fetchJSON(`observations?${params}`, { signal });
+    const facets = await fetchJSON(`facets?${params}`, { signal });
 
     // Update route/headsign dropdowns from facets (suppress onChange to avoid recursive calls)
     // The stop dropdown is intentionally NOT refreshed here — it is populated once at
