@@ -13,6 +13,10 @@ public class AnalyzerService
     private readonly ILogger<AnalyzerService> _logger;
 
     public const int OutlierThreshold = 1800; // 30 minutes
+    private const int OnTimeEarlyBoundary = -60;
+    private const int OnTimeLateBoundary = 180;
+    private const int SlightlyLateBoundary = 480;
+    private const int VeryEarlyBoundary = -180;
 
     private bool IsSqlite => _context.Database.ProviderName?.Contains("Sqlite") ?? false;
 
@@ -84,19 +88,24 @@ public class AnalyzerService
                                  AND ABS(o.departure_delay)>{OutlierThreshold} THEN 1 ELSE 0 END) AS suspect_gps,
                    SUM(CASE WHEN o.delay_source=2
                                  AND (o.realtime_state_id IS NULL OR o.realtime_state_id NOT IN (2, 3))
-                                 AND o.departure_delay BETWEEN 0 AND 180 THEN 1 ELSE 0 END) AS on_time,
+                                 AND o.departure_delay>{OnTimeEarlyBoundary}
+                                 AND o.departure_delay<{OnTimeLateBoundary} THEN 1 ELSE 0 END) AS on_time,
                    SUM(CASE WHEN o.delay_source=2
                                  AND (o.realtime_state_id IS NULL OR o.realtime_state_id NOT IN (2, 3))
-                                 AND o.departure_delay>180 AND o.departure_delay<=600 THEN 1 ELSE 0 END) AS slightly_late,
+                                 AND o.departure_delay>={OnTimeLateBoundary}
+                                 AND o.departure_delay<={SlightlyLateBoundary} THEN 1 ELSE 0 END) AS slightly_late,
                    SUM(CASE WHEN o.delay_source=2
                                  AND (o.realtime_state_id IS NULL OR o.realtime_state_id NOT IN (2, 3))
-                                 AND o.departure_delay>600 AND o.departure_delay<={OutlierThreshold} THEN 1 ELSE 0 END) AS very_late,
+                                 AND o.departure_delay>{SlightlyLateBoundary}
+                                 AND o.departure_delay<={OutlierThreshold} THEN 1 ELSE 0 END) AS very_late,
                    SUM(CASE WHEN o.delay_source=2
                                  AND (o.realtime_state_id IS NULL OR o.realtime_state_id NOT IN (2, 3))
-                                 AND o.departure_delay>=-60 AND o.departure_delay<0 THEN 1 ELSE 0 END) AS slightly_early,
+                                 AND o.departure_delay>={VeryEarlyBoundary}
+                                 AND o.departure_delay<={OnTimeEarlyBoundary} THEN 1 ELSE 0 END) AS slightly_early,
                    SUM(CASE WHEN o.delay_source=2
                                  AND (o.realtime_state_id IS NULL OR o.realtime_state_id NOT IN (2, 3))
-                                 AND o.departure_delay>=-{OutlierThreshold} AND o.departure_delay<-60 THEN 1 ELSE 0 END) AS very_early,
+                                 AND o.departure_delay>=-{OutlierThreshold}
+                                 AND o.departure_delay<{VeryEarlyBoundary} THEN 1 ELSE 0 END) AS very_early,
                    SUM(CASE WHEN o.delay_source=2
                                  AND (o.realtime_state_id IS NULL OR o.realtime_state_id NOT IN (2, 3))
                                  AND ABS(o.departure_delay)<={OutlierThreshold} THEN 1 ELSE 0 END) AS clean_count,
@@ -192,7 +201,8 @@ public class AnalyzerService
                     SUM(CASE WHEN o.delay_source=2
                                   AND (o.realtime_state_id IS NULL OR o.realtime_state_id NOT IN (2, 3))
                                   AND ABS(o.departure_delay)<={OutlierThreshold}
-                                  AND o.departure_delay BETWEEN 0 AND 180 THEN 1 ELSE 0 END) AS on_time,
+                                  AND o.departure_delay>{OnTimeEarlyBoundary}
+                                  AND o.departure_delay<{OnTimeLateBoundary} THEN 1 ELSE 0 END) AS on_time,
                     SUM(CASE WHEN o.delay_source=2
                                   AND (o.realtime_state_id IS NULL OR o.realtime_state_id NOT IN (2, 3))
                                   AND ABS(o.departure_delay)<={OutlierThreshold} THEN 1 ELSE 0 END) AS clean_count,

@@ -45,6 +45,31 @@ public class AnalyzerTests : IDisposable
     }
 
     [Fact]
+    public async Task SummaryUsesExclusiveTimelinessBoundaries()
+    {
+        await SetupTripsAndObsAsync(new[]
+        {
+            ("very-early", "Vaasa:3", 24000, -181, 2),
+            ("early-start", "Vaasa:3", 24100, -180, 2),
+            ("early-end", "Vaasa:3", 24200, -60, 2),
+            ("on-time-early", "Vaasa:3", 24300, -59, 2),
+            ("on-time-zero", "Vaasa:3", 24400, 0, 2),
+            ("on-time-late", "Vaasa:3", 24500, 179, 2),
+            ("slightly-late-start", "Vaasa:3", 24600, 180, 2),
+            ("slightly-late-end", "Vaasa:3", 24700, 480, 2),
+            ("very-late", "Vaasa:3", 24800, 481, 2),
+        });
+
+        var summary = await _analyzer.GetSummaryAsync("Vaasa:309392", "2026-04-02", "2026-04-02");
+
+        Assert.Equal(3, summary["on_time"]);
+        Assert.Equal(2, summary["slightly_late"]);
+        Assert.Equal(1, summary["very_late"]);
+        Assert.Equal(2, summary["slightly_early"]);
+        Assert.Equal(1, summary["very_early"]);
+    }
+
+    [Fact]
     public async Task SummaryRouteFilter()
     {
         await SetupTripsAndObsAsync(new[]
@@ -77,6 +102,24 @@ public class AnalyzerTests : IDisposable
 
         var route9 = breakdown.First(r => (string)r["route"]! == "9");
         Assert.Equal(1, route9["departures"]);
+    }
+
+    [Fact]
+    public async Task RouteBreakdownCountsLessThanOneMinuteEarlyAsOnTime()
+    {
+        await SetupTripsAndObsAsync(new[]
+        {
+            ("early-on-time", "Vaasa:3", 24000, -59, 2),
+            ("early", "Vaasa:3", 24100, -60, 2),
+            ("late-on-time", "Vaasa:3", 24200, 179, 2),
+            ("slightly-late", "Vaasa:3", 24300, 180, 2),
+        });
+
+        var breakdown = await _analyzer.GetRouteBreakdownAsync(
+            "Vaasa:309392", "2026-04-02", "2026-04-02");
+
+        var route3 = breakdown.Single(r => (string)r["route"]! == "3");
+        Assert.Equal(50.0, route3["on_time_pct"]);
     }
 
     [Fact]
