@@ -66,6 +66,9 @@ builder.Services.AddOpenTelemetry()
         // Must be registered before UseAzureMonitor so it runs before the exporter.
         tracing.AddProcessor(new FastDbDependencyFilterProcessor());
         tracing.AddSource(DataSyncBackgroundService.ActivitySource.Name);
+        // Stable SqlClient instrumentation records parameterized command text as
+        // db.query.text by default. Query parameter values remain opt-in and disabled.
+        tracing.AddSqlClientInstrumentation();
     })
     .UseAzureMonitor();
 
