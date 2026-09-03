@@ -103,6 +103,7 @@ The project deploys to Azure via GitHub Actions (`.github/workflows/cd.yml`):
 
 - The Digitransit API only exposes realtime delays while buses are running. Once service ends for the day, delay data disappears. The background service captures this data before it is lost.
 - Delays beyond ±30 minutes are flagged as suspect GPS data and excluded from statistics.
+- Timeliness categories are: on time (less than 1 minute early to less than 3 minutes late), slightly late (3–8 minutes), very late (more than 8 minutes), early (1–3 minutes early), and very early (more than 3 minutes early).
 - All times are stored in UTC; display output uses Europe/Helsinki timezone.
 - Holiday/no-service detection: all patterns return empty stoptimes → logged as no-service.
 - OpenTelemetry is configured with Azure Monitor exporter (`APPLICATIONINSIGHTS_CONNECTION_STRING` env var). SQL dependency telemetry includes parameterized command text but not parameter values. Custom traces are emitted from `DataSyncBackgroundService` with the `WalttiAnalyzer.Sync` activity source.

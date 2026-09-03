@@ -430,11 +430,11 @@ function renderDashboardResults(summary, routes, hourly, observations, allStops 
   html += `<div class="stats-section">
     <h2>Timeliness Breakdown</h2>
     <table>
-      <tr><td>On time (0–3 min late)</td><td><strong>${summary.on_time}</strong></td></tr>
-      <tr><td>Slightly late (3–10 min)</td><td><strong>${summary.slightly_late}</strong></td></tr>
-      <tr><td>Very late (&gt;10 min)</td><td><strong>${summary.very_late}</strong></td></tr>
-      <tr><td>Slightly early (&lt;1 min)</td><td><strong>${summary.slightly_early}</strong></td></tr>
-      <tr><td>Very early (&gt;1 min early)</td><td><strong>${summary.very_early}</strong></td></tr>
+      <tr><td>On time (&lt;1 min early to &lt;3 min late)</td><td><strong>${summary.on_time}</strong></td></tr>
+      <tr><td>Slightly late (3–8 min)</td><td><strong>${summary.slightly_late}</strong></td></tr>
+      <tr><td>Very late (&gt;8 min)</td><td><strong>${summary.very_late}</strong></td></tr>
+      <tr><td>Early (1–3 min early)</td><td><strong>${summary.slightly_early}</strong></td></tr>
+      <tr><td>Very early (&gt;3 min early)</td><td><strong>${summary.very_early}</strong></td></tr>
       <tr><td>Canceled</td><td><strong>${summary.canceled}</strong></td></tr>
       <tr><td>Skipped</td><td><strong>${summary.skipped || 0}</strong></td></tr>
       <tr><td>Propagated (estimated)</td><td><strong>${summary.propagated || 0}</strong></td></tr>
