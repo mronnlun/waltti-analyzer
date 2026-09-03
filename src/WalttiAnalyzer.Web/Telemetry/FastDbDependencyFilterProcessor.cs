@@ -14,7 +14,8 @@ public class FastDbDependencyFilterProcessor : BaseProcessor<Activity>
     public override void OnEnd(Activity activity)
     {
         if (activity.Kind == ActivityKind.Client
-            && activity.GetTagItem("db.system") is string
+            && (activity.GetTagItem("db.system.name") is string
+                || activity.GetTagItem("db.system") is string)
             && activity.Status != ActivityStatusCode.Error
             && activity.Duration < DurationThreshold)
         {
