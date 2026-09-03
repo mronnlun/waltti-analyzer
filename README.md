@@ -104,4 +104,4 @@ The project deploys to Azure via GitHub Actions (`.github/workflows/cd.yml`):
 - Delays beyond ±30 minutes are flagged as suspect GPS data and excluded from statistics.
 - All times are stored in UTC; display output uses Europe/Helsinki timezone.
 - Holiday/no-service detection: all patterns return empty stoptimes → logged as no-service.
-- OpenTelemetry is configured with Azure Monitor exporter (`APPLICATIONINSIGHTS_CONNECTION_STRING` env var). Custom traces are emitted from `DataSyncBackgroundService` with the `WalttiAnalyzer.Sync` activity source.
+- OpenTelemetry is configured with Azure Monitor exporter (`APPLICATIONINSIGHTS_CONNECTION_STRING` env var). SQL dependency telemetry includes parameterized command text but not parameter values. Custom traces are emitted from `DataSyncBackgroundService` with the `WalttiAnalyzer.Sync` activity source.

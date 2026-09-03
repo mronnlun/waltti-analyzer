@@ -66,6 +66,12 @@ builder.Services.AddOpenTelemetry()
         // Must be registered before UseAzureMonitor so it runs before the exporter.
         tracing.AddProcessor(new FastDbDependencyFilterProcessor());
         tracing.AddSource(DataSyncBackgroundService.ActivitySource.Name);
+        tracing.AddSqlClientInstrumentation(options =>
+        {
+            // EF Core uses parameterized commands, so this records the SQL template
+            // in dependency telemetry without recording parameter values.
+            options.SetDbStatementForText = true;
+        });
     })
     .UseAzureMonitor();
 
