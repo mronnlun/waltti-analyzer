@@ -100,6 +100,18 @@ infra/
 - **Local development**: SQLite only. `WalttiDbContext` uses `UseSqlite(DatabasePath)`. No extra setup required.
 - **Azure (production)**: Azure SQL only. The `DATABASE` connection string is injected by Bicep (ADO.NET format for EF Core SQL Server provider). `Waltti__DatabasePath` and SQLite are **not used** in Azure. Do not add `Waltti__DatabasePath` to Bicep or any production config.
 
+### Production Azure scope
+
+- **Tenant ID**: `f48f1007-7eff-4537-a4dc-d93101320193`
+- **Subscription ID**: `299c01f5-22c1-49c0-815c-b43516b61607`
+- Before running production Azure commands, authenticate to this tenant and explicitly select this subscription. Do not rely on the Azure CLI default subscription:
+
+```bash
+az login --tenant f48f1007-7eff-4537-a4dc-d93101320193
+az account set --subscription 299c01f5-22c1-49c0-815c-b43516b61607
+az account show --query "{tenantId:tenantId, subscriptionId:id, subscriptionName:name}" --output table
+```
+
 ## Building and Testing
 
 ```bash

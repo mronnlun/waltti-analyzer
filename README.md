@@ -70,6 +70,7 @@ Settings are bound from the `"Waltti"` config section (use `Waltti__Key` as envi
 | `Waltti__FeedId` | `Vaasa` | GTFS feed to collect data for |
 | `Waltti__DefaultStopId` | `Vaasa:309392` | Default stop shown in the UI |
 | `Waltti__DatabasePath` | `data/waltti.db` | SQLite database path (local dev only) |
+| `Waltti__SyncEnabled` | `true` | Set to `false` for read-only diagnostics so the hosted collector is not registered |
 
 In Azure, the `DATABASE` connection string overrides SQLite and uses Azure SQL via EF Core SQL Server provider.
 

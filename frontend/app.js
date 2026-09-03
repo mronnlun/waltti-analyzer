@@ -205,7 +205,7 @@ async function renderDashboard(container) {
           <button type="button" class="filter-clear-btn" id="time-to-clear" title="Clear time to" aria-label="Clear time to">×</button>
           <span class="filter-hint" title="Filter departures by scheduled time of day">?</span>
         </div>
-        <div class="filter-status">
+        <div class="filter-status" role="status" aria-live="polite" aria-atomic="true">
           <span id="action-status"></span>
         </div>
       </div>
@@ -304,13 +304,20 @@ async function loadDashboardData() {
   const headsign = headsignSelect ? headsignSelect.getValue() : "";
   const timeFrom = document.getElementById("time-from").value;
   const timeTo = document.getElementById("time-to").value;
+  const resultsEl = document.getElementById("dash-results");
+
+  // Never leave statistics from the previous filter selection visible while
+  // a new result set is being prepared.
+  resultsEl.hidden = true;
+  resultsEl.setAttribute("aria-busy", "true");
 
   if (!from || !to) {
-    document.getElementById("action-status").textContent = "Select a date range";
+    setDashboardStatus("Select a date range");
+    resultsEl.setAttribute("aria-busy", "false");
     return;
   }
 
-  document.getElementById("action-status").textContent = "Loading…";
+  setDashboardStatus("Loading new statistics…", "loading");
 
   const allStops = stopId === "";
   const params = new URLSearchParams({ from, to });
@@ -321,13 +328,14 @@ async function loadDashboardData() {
   if (timeTo) params.set("time_to", timeTo);
 
   try {
-    const [summary, routes, hourly, observations, facets] = await Promise.all([
-      fetchJSON(`summary?${params}`, { signal }),
-      fetchJSON(`route-breakdown?${params}`, { signal }),
-      fetchJSON(`delay-by-hour?${params}`, { signal }),
-      fetchJSON(`observations?${params}`, { signal }),
-      fetchJSON(`facets?${params}`, { signal }),
-    ]);
+    // Azure SQL Basic has very limited concurrent query capacity. Running these
+    // report queries in parallel makes each one slower and can exhaust the
+    // 30-second command timeout, while sequential execution stays predictable.
+    const summary = await fetchJSON(`summary?${params}`, { signal });
+    const routes = await fetchJSON(`route-breakdown?${params}`, { signal });
+    const hourly = await fetchJSON(`delay-by-hour?${params}`, { signal });
+    const observations = await fetchJSON(`observations?${params}`, { signal });
+    const facets = await fetchJSON(`facets?${params}`, { signal });
 
     // Update route/headsign dropdowns from facets (suppress onChange to avoid recursive calls)
     // The stop dropdown is intentionally NOT refreshed here — it is populated once at
@@ -371,12 +379,24 @@ async function loadDashboardData() {
       return;
     }
 
-    document.getElementById("action-status").textContent = "";
     renderDashboardResults(summary, routes, hourly, observations, allStops);
+    setDashboardStatus("");
+    resultsEl.setAttribute("aria-busy", "false");
+    resultsEl.hidden = false;
   } catch (err) {
     if (err.name === "AbortError") return;
-    document.getElementById("action-status").textContent = `Error: ${err.message}`;
+    setDashboardStatus(`Error: ${err.message}`, "error");
+    resultsEl.setAttribute("aria-busy", "false");
   }
+}
+
+function setDashboardStatus(message, state = "") {
+  const status = document.getElementById("action-status");
+  const container = status.closest(".filter-status");
+  status.textContent = message;
+  container.classList.toggle("is-visible", Boolean(message));
+  container.classList.toggle("is-loading", state === "loading");
+  container.classList.toggle("is-error", state === "error");
 }
 
 function renderDashboardResults(summary, routes, hourly, observations, allStops = false) {

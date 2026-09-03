@@ -52,13 +52,14 @@ builder.Services.AddHttpClient<DigitransitClient>((sp, client) =>
         client.DefaultRequestHeaders.Add("digitransit-subscription-key", s.DigitransitApiKey);
 });
 
-builder.Services.AddHostedService<DataSyncBackgroundService>();
+if (walttiSettings.SyncEnabled)
+    builder.Services.AddHostedService<DataSyncBackgroundService>();
 
 // -----------------------------------------------------------------------
 // OpenTelemetry with Azure Monitor / Application Insights
 // -----------------------------------------------------------------------
 
-builder.Services.AddOpenTelemetry()
+var openTelemetry = builder.Services.AddOpenTelemetry()
     .WithTracing(tracing =>
     {
         // Filter out fast, successful DB dependency telemetry to reduce
@@ -69,8 +70,10 @@ builder.Services.AddOpenTelemetry()
         // Stable SqlClient instrumentation records parameterized command text as
         // db.query.text by default. Query parameter values remain opt-in and disabled.
         tracing.AddSqlClientInstrumentation();
-    })
-    .UseAzureMonitor();
+    });
+
+if (!string.IsNullOrWhiteSpace(builder.Configuration["APPLICATIONINSIGHTS_CONNECTION_STRING"]))
+    openTelemetry.UseAzureMonitor();
 
 // -----------------------------------------------------------------------
 // Health checks

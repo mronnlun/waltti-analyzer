@@ -1,5 +1,6 @@
 using System.Data;
 using System.Data.Common;
+using System.Diagnostics;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using WalttiAnalyzer.Core.Data;
@@ -99,6 +100,32 @@ public class DatabaseService
             else
                 _context.Database.ExecuteSqlRaw("ALTER TABLE observations ADD delay_source INT NOT NULL DEFAULT 0");
         }
+
+        EnsurePerformanceIndexes();
+    }
+
+    private void EnsurePerformanceIndexes()
+    {
+        if (!IndexExists("observations", "idx_obs_date_report"))
+        {
+            _logger.LogInformation("Schema migration: creating date-range report index");
+            _context.Database.ExecuteSqlRaw(IsSqlite
+                ? "CREATE INDEX idx_obs_date_report ON observations (service_date, scheduled_departure)"
+                : @"CREATE INDEX idx_obs_date_report
+                    ON observations (service_date, scheduled_departure)
+                    INCLUDE (stop_id, trip_id, departure_delay, delay_source, realtime_state_id)
+                    WITH (MAXDOP = 1)");
+        }
+
+        if (!IndexExists("collection_log", "idx_collection_log_lookup"))
+        {
+            _logger.LogInformation("Schema migration: creating collection-log lookup index");
+            _context.Database.ExecuteSqlRaw(IsSqlite
+                ? "CREATE INDEX idx_collection_log_lookup ON collection_log (queried_at DESC)"
+                : @"CREATE INDEX idx_collection_log_lookup ON collection_log (queried_at DESC)
+                    INCLUDE (stop_gtfs_id, query_type)
+                    WITH (MAXDOP = 1)");
+        }
     }
 
     /// <summary>Returns true when the observations.service_date column is not a numeric type,
@@ -148,6 +175,8 @@ public class DatabaseService
                 )");
             _context.Database.ExecuteSqlRaw(
                 "CREATE INDEX idx_obs_stop_date ON observations (stop_id, service_date)");
+            _context.Database.ExecuteSqlRaw(
+                "CREATE INDEX idx_obs_date_report ON observations (service_date, scheduled_departure)");
         }
         else
         {
@@ -170,7 +199,40 @@ public class DatabaseService
                 )");
             _context.Database.ExecuteSqlRaw(
                 "CREATE INDEX idx_obs_stop_date ON observations (stop_id, service_date)");
+            _context.Database.ExecuteSqlRaw(@"CREATE INDEX idx_obs_date_report
+                ON observations (service_date, scheduled_departure)
+                INCLUDE (stop_id, trip_id, departure_delay, delay_source, realtime_state_id)");
         }
+    }
+
+    private bool IndexExists(string tableName, string indexName)
+    {
+        var conn = _context.Database.GetDbConnection();
+        bool wasOpen = conn.State == ConnectionState.Open;
+        if (!wasOpen) conn.Open();
+        try
+        {
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = IsSqlite
+                ? "SELECT name FROM sqlite_master WHERE type='index' AND tbl_name=@table AND name=@index"
+                : "SELECT name FROM sys.indexes WHERE object_id=OBJECT_ID(@table) AND name=@index";
+            AddParameter(cmd, "@table", tableName);
+            AddParameter(cmd, "@index", indexName);
+            var result = cmd.ExecuteScalar();
+            return result != null && result != DBNull.Value;
+        }
+        finally
+        {
+            if (!wasOpen) conn.Close();
+        }
+    }
+
+    private static void AddParameter(DbCommand command, string name, object value)
+    {
+        var parameter = command.CreateParameter();
+        parameter.ParameterName = name;
+        parameter.Value = value;
+        command.Parameters.Add(parameter);
     }
 
     private bool TableExists(string tableName)
@@ -516,7 +578,7 @@ public class DatabaseService
         AppendPastOnlyFilter(ref sql, parms);
         sql += " ORDER BY o.service_date DESC, o.scheduled_departure DESC";
         sql += IsSqlite ? " LIMIT 300" : " OFFSET 0 ROWS FETCH NEXT 300 ROWS ONLY";
-        return await ReadObservationsRawAsync(sql, parms, includeStopName: allStops, ct: ct);
+        return await ReadObservationsRawAsync("observations", sql, parms, includeStopName: allStops, ct: ct);
     }
 
     public async Task<List<Observation>> GetLatestObservationsAsync(int limit = 300, string? feedId = null,
@@ -528,7 +590,7 @@ public class DatabaseService
         sql += " ORDER BY o.service_date DESC, o.scheduled_departure DESC";
         sql += IsSqlite ? " LIMIT @lim" : " OFFSET 0 ROWS FETCH NEXT @lim ROWS ONLY";
         parms.Add(("@lim", limit));
-        return await ReadObservationsRawAsync(sql, parms, includeStopName: true, ct: ct);
+        return await ReadObservationsRawAsync("latest observations", sql, parms, includeStopName: true, ct: ct);
     }
 
     // -----------------------------------------------------------------------
@@ -566,15 +628,21 @@ public class DatabaseService
         o.id, s.gtfs_id AS stop_gtfs_id, t.gtfs_id AS trip_gtfs_id,
         o.service_date, o.scheduled_departure,
         o.departure_delay, o.delay_source,
-        rs.name AS realtime_state,
+        CASE o.realtime_state_id
+            WHEN 0 THEN 'SCHEDULED'
+            WHEN 1 THEN 'UPDATED'
+            WHEN 2 THEN 'CANCELED'
+            WHEN 3 THEN 'SKIPPED'
+            WHEN 4 THEN 'ADDED'
+            WHEN 5 THEN 'MODIFIED'
+        END AS realtime_state,
         r.short_name AS route_short_name, t.headsign, t.direction_id";
 
     private const string ObsJoins = @"
         FROM observations o
         JOIN stops s ON o.stop_id=s.id
         JOIN trips t ON o.trip_id=t.id
-        JOIN routes r ON t.route_id=r.id
-        LEFT JOIN realtime_states rs ON o.realtime_state_id=rs.id";
+        JOIN routes r ON t.route_id=r.id";
 
     private static void AppendStopFilter(ref string sql, List<(string Name, object? Value)> parms,
         string? stopId, string? feedId)
@@ -609,9 +677,10 @@ public class DatabaseService
     }
 
     private async Task<List<Observation>> ReadObservationsRawAsync(
-        string sql, List<(string Name, object? Value)> parms, bool includeStopName,
+        string operation, string sql, List<(string Name, object? Value)> parms, bool includeStopName,
         CancellationToken ct = default)
     {
+        var stopwatch = Stopwatch.StartNew();
         var conn = _context.Database.GetDbConnection();
         bool wasOpen = conn.State == ConnectionState.Open;
         if (!wasOpen) await conn.OpenAsync(ct);
@@ -651,6 +720,8 @@ public class DatabaseService
                 }
                 result.Add(obs);
             }
+            _logger.LogInformation("Database report query {Operation} completed in {ElapsedMs} ms with {RowCount} result rows",
+                operation, stopwatch.ElapsedMilliseconds, result.Count);
             return result;
         }
         finally
@@ -659,10 +730,11 @@ public class DatabaseService
         }
     }
 
-    private async Task<List<T>> QueryRawAsync<T>(string sql,
+    private async Task<List<T>> QueryRawAsync<T>(string operation, string sql,
         List<(string Name, object? Value)> parms, Func<DbDataReader, T> mapper,
         CancellationToken ct = default)
     {
+        var stopwatch = Stopwatch.StartNew();
         var conn = _context.Database.GetDbConnection();
         bool wasOpen = conn.State == ConnectionState.Open;
         if (!wasOpen) await conn.OpenAsync(ct);
@@ -681,6 +753,8 @@ public class DatabaseService
             var result = new List<T>();
             while (await reader.ReadAsync(ct))
                 result.Add(mapper(reader));
+            _logger.LogInformation("Database report query {Operation} completed in {ElapsedMs} ms with {RowCount} result rows",
+                operation, stopwatch.ElapsedMilliseconds, result.Count);
             return result;
         }
         finally
@@ -697,13 +771,13 @@ public class DatabaseService
         int start, int end, int? timeFrom, int? timeTo, string? feedId,
         CancellationToken ct = default)
     {
-        const string baseJoins = @"FROM observations o
-            JOIN stops s ON o.stop_id = s.id
-            JOIN trips t ON o.trip_id = t.id
-            JOIN routes r ON t.route_id = r.id";
-
         // Stops facet: filtered by route + headsign (not by stop), scoped to feedId
-        var stopsSql = $"SELECT DISTINCT s.gtfs_id, s.name {baseJoins} WHERE o.service_date>=@start AND o.service_date<=@end";
+        var stopsJoins = "FROM observations o JOIN stops s ON o.stop_id=s.id";
+        if (!string.IsNullOrEmpty(route) || !string.IsNullOrEmpty(headsign))
+            stopsJoins += " JOIN trips t ON o.trip_id=t.id";
+        if (!string.IsNullOrEmpty(route))
+            stopsJoins += " JOIN routes r ON t.route_id=r.id";
+        var stopsSql = $"SELECT DISTINCT s.gtfs_id, s.name {stopsJoins} WHERE o.service_date>=@start AND o.service_date<=@end";
         var stopsParms = new List<(string, object?)> { ("@start", start), ("@end", end) };
         if (!string.IsNullOrEmpty(feedId)) { stopsSql += " AND s.gtfs_id LIKE @feed"; stopsParms.Add(("@feed", $"{feedId}:%")); }
         AppendFilters(ref stopsSql, stopsParms, route, timeFrom, timeTo, headsign);
@@ -711,7 +785,11 @@ public class DatabaseService
         stopsSql += " ORDER BY s.name";
 
         // Routes facet: filtered by stop + headsign (not by route)
-        var routesSql = $"SELECT DISTINCT r.short_name {baseJoins} WHERE r.short_name IS NOT NULL AND o.service_date>=@start AND o.service_date<=@end";
+        const string routeJoins = @"FROM observations o
+            JOIN stops s ON o.stop_id=s.id
+            JOIN trips t ON o.trip_id=t.id
+            JOIN routes r ON t.route_id=r.id";
+        var routesSql = $"SELECT DISTINCT r.short_name {routeJoins} WHERE r.short_name IS NOT NULL AND o.service_date>=@start AND o.service_date<=@end";
         var routesParms = new List<(string, object?)> { ("@start", start), ("@end", end) };
         AppendStopFilter(ref routesSql, routesParms, stopId, feedId);
         AppendFilters(ref routesSql, routesParms, null, timeFrom, timeTo, headsign);
@@ -719,18 +797,23 @@ public class DatabaseService
         routesSql += " ORDER BY r.short_name";
 
         // Headsigns facet: filtered by stop + route (not by headsign)
-        var headsignsSql = $"SELECT DISTINCT t.headsign {baseJoins} WHERE t.headsign IS NOT NULL AND o.service_date>=@start AND o.service_date<=@end";
+        var headsignJoins = @"FROM observations o
+            JOIN stops s ON o.stop_id=s.id
+            JOIN trips t ON o.trip_id=t.id";
+        if (!string.IsNullOrEmpty(route))
+            headsignJoins += " JOIN routes r ON t.route_id=r.id";
+        var headsignsSql = $"SELECT DISTINCT t.headsign {headsignJoins} WHERE t.headsign IS NOT NULL AND o.service_date>=@start AND o.service_date<=@end";
         var headsignsParms = new List<(string, object?)> { ("@start", start), ("@end", end) };
         AppendStopFilter(ref headsignsSql, headsignsParms, stopId, feedId);
         AppendFilters(ref headsignsSql, headsignsParms, route, timeFrom, timeTo, null);
         AppendPastOnlyFilter(ref headsignsSql, headsignsParms);
         headsignsSql += " ORDER BY t.headsign";
 
-        var stops = await QueryRawAsync(stopsSql, stopsParms,
+        var stops = await QueryRawAsync("stop facets", stopsSql, stopsParms,
             r => new { value = r.GetString(0), name = r.GetString(1) }, ct);
-        var routes = await QueryRawAsync(routesSql, routesParms,
+        var routes = await QueryRawAsync("route facets", routesSql, routesParms,
             r => r.GetString(0), ct);
-        var headsigns = await QueryRawAsync(headsignsSql, headsignsParms,
+        var headsigns = await QueryRawAsync("headsign facets", headsignsSql, headsignsParms,
             r => r.IsDBNull(0) ? null : r.GetString(0), ct);
 
         return new

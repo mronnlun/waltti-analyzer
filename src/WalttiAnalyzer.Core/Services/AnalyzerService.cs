@@ -1,5 +1,6 @@
 using System.Data;
 using System.Data.Common;
+using System.Diagnostics;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using WalttiAnalyzer.Core.Data;
@@ -61,28 +62,67 @@ public class AnalyzerService
         var endParsed = TryParseDateToInt(endDate);
         if (!startParsed.HasValue || !endParsed.HasValue)
             return new Dictionary<string, object?> { ["total_departures"] = 0, ["message"] = "Invalid date format" };
-        int start = startParsed.Value, end = endParsed.Value;
 
-        var sql = @"SELECT o.departure_delay, o.delay_source, o.service_date, rs.name AS realtime_state
-                    FROM observations o
-                    JOIN trips t ON o.trip_id=t.id
-                    JOIN stops s ON o.stop_id=s.id
-                    JOIN routes r ON t.route_id=r.id
-                    LEFT JOIN realtime_states rs ON o.realtime_state_id=rs.id
-                    WHERE o.service_date>=@start AND o.service_date<=@end";
-        var parms = new List<(string, object?)> { ("@start", start), ("@end", end) };
-        AppendStopFilter(ref sql, parms, stopId, feedId);
-        AppendFilters(ref sql, parms, route, timeFrom, timeTo, headsign);
-        AppendPastOnlyFilter(ref sql, parms);
+        var fromWhereSql = $@"{BuildJoins(includeTrip: NeedsTrip(route, headsign), includeRoute: !string.IsNullOrEmpty(route))}
+            WHERE o.service_date>=@start AND o.service_date<=@end";
+        var parms = NewDateParameters(startParsed.Value, endParsed.Value);
+        AppendStopFilter(ref fromWhereSql, parms, stopId, feedId);
+        AppendFilters(ref fromWhereSql, parms, route, timeFrom, timeTo, headsign);
+        AppendPastOnlyFilter(ref fromWhereSql, parms);
 
-        var rows = await QueryRawAsync(sql, parms, r => (
-            delay: r.IsDBNull(0) ? (int?)null : r.GetInt32(0),
-            delaySource: r.GetInt32(1),
-            serviceDate: r.GetInt32(2),
-            state: r.IsDBNull(3) ? null : r.GetString(3)
-        ), ct);
+        var sql = $@"
+            SELECT COUNT(*) AS total_departures,
+                   COUNT(DISTINCT o.service_date) AS service_days,
+                   SUM(CASE WHEN o.delay_source=2 THEN 1 ELSE 0 END) AS measured,
+                   SUM(CASE WHEN o.delay_source=1 THEN 1 ELSE 0 END) AS propagated,
+                   SUM(CASE WHEN o.delay_source=0 THEN 1 ELSE 0 END) AS static_only,
+                   SUM(CASE WHEN o.realtime_state_id=2 THEN 1 ELSE 0 END) AS canceled,
+                   SUM(CASE WHEN o.realtime_state_id=3 THEN 1 ELSE 0 END) AS skipped,
+                   SUM(CASE WHEN o.delay_source=2
+                                 AND (o.realtime_state_id IS NULL OR o.realtime_state_id NOT IN (2, 3))
+                                 AND o.departure_delay IS NOT NULL
+                                 AND ABS(o.departure_delay)>{OutlierThreshold} THEN 1 ELSE 0 END) AS suspect_gps,
+                   SUM(CASE WHEN o.delay_source=2
+                                 AND (o.realtime_state_id IS NULL OR o.realtime_state_id NOT IN (2, 3))
+                                 AND o.departure_delay BETWEEN 0 AND 180 THEN 1 ELSE 0 END) AS on_time,
+                   SUM(CASE WHEN o.delay_source=2
+                                 AND (o.realtime_state_id IS NULL OR o.realtime_state_id NOT IN (2, 3))
+                                 AND o.departure_delay>180 AND o.departure_delay<=600 THEN 1 ELSE 0 END) AS slightly_late,
+                   SUM(CASE WHEN o.delay_source=2
+                                 AND (o.realtime_state_id IS NULL OR o.realtime_state_id NOT IN (2, 3))
+                                 AND o.departure_delay>600 AND o.departure_delay<={OutlierThreshold} THEN 1 ELSE 0 END) AS very_late,
+                   SUM(CASE WHEN o.delay_source=2
+                                 AND (o.realtime_state_id IS NULL OR o.realtime_state_id NOT IN (2, 3))
+                                 AND o.departure_delay>=-60 AND o.departure_delay<0 THEN 1 ELSE 0 END) AS slightly_early,
+                   SUM(CASE WHEN o.delay_source=2
+                                 AND (o.realtime_state_id IS NULL OR o.realtime_state_id NOT IN (2, 3))
+                                 AND o.departure_delay>=-{OutlierThreshold} AND o.departure_delay<-60 THEN 1 ELSE 0 END) AS very_early,
+                   SUM(CASE WHEN o.delay_source=2
+                                 AND (o.realtime_state_id IS NULL OR o.realtime_state_id NOT IN (2, 3))
+                                 AND ABS(o.departure_delay)<={OutlierThreshold} THEN 1 ELSE 0 END) AS clean_count,
+                   AVG(CASE WHEN o.delay_source=2
+                                 AND (o.realtime_state_id IS NULL OR o.realtime_state_id NOT IN (2, 3))
+                                 AND o.departure_delay>0 AND o.departure_delay<={OutlierThreshold}
+                            THEN CAST(o.departure_delay AS FLOAT) END) AS avg_late,
+                   AVG(CASE WHEN o.delay_source=2
+                                 AND (o.realtime_state_id IS NULL OR o.realtime_state_id NOT IN (2, 3))
+                                 AND o.departure_delay<0 AND o.departure_delay>=-{OutlierThreshold}
+                            THEN CAST(o.departure_delay AS FLOAT) END) AS avg_early,
+                   MAX(CASE WHEN o.delay_source=2
+                                 AND (o.realtime_state_id IS NULL OR o.realtime_state_id NOT IN (2, 3))
+                                 AND ABS(o.departure_delay)<={OutlierThreshold} THEN o.departure_delay END) AS max_late,
+                   MIN(CASE WHEN o.delay_source=2
+                                 AND (o.realtime_state_id IS NULL OR o.realtime_state_id NOT IN (2, 3))
+                                 AND ABS(o.departure_delay)<={OutlierThreshold} THEN o.departure_delay END) AS max_early
+            {fromWhereSql}";
 
-        if (rows.Count == 0)
+        var rows = await QueryRawAsync("summary", sql, parms, r => new SummaryAggregate(
+            Int(r, 0), Int(r, 1), Int(r, 2), Int(r, 3), Int(r, 4), Int(r, 5), Int(r, 6),
+            Int(r, 7), Int(r, 8), Int(r, 9), Int(r, 10), Int(r, 11), Int(r, 12), Int(r, 13),
+            NullableDouble(r, 14), NullableDouble(r, 15), NullableInt(r, 16), NullableInt(r, 17)), ct);
+
+        var aggregate = rows.Single();
+        if (aggregate.Total == 0)
             return new Dictionary<string, object?>
             {
                 ["period"] = new { start = startDate, end = endDate },
@@ -90,54 +130,50 @@ public class AnalyzerService
                 ["message"] = "No observations found"
             };
 
-        int total = rows.Count;
-        var measured = rows.Where(r => r.delaySource == 2).ToList();
-        int propagated = rows.Count(r => r.delaySource == 1);
-        int canceled = rows.Count(r => r.state == "CANCELED");
-        int skipped = rows.Count(r => r.state == "SKIPPED");
-        int staticOnly = rows.Count(r => r.delaySource == 0);
-
-        // Use only MEASURED data for delay statistics
-        var allDelays = measured
-            .Where(r => r.state != "CANCELED" && r.state != "SKIPPED")
-            .Where(r => r.delay.HasValue)
-            .Select(r => r.delay!.Value).ToList();
-        var outliers = allDelays.Where(d => Math.Abs(d) > OutlierThreshold).ToList();
-        var delays = allDelays.Where(d => Math.Abs(d) <= OutlierThreshold).ToList();
-
-        var onTime = delays.Count(d => d >= 0 && d <= 180);
-        var slightlyLate = delays.Count(d => d > 180 && d <= 600);
-        var veryLate = delays.Count(d => d > 600);
-        var slightlyEarly = delays.Count(d => d >= -60 && d < 0);
-        var veryEarly = delays.Count(d => d < -60);
-
-        var lateDelays = delays.Where(d => d > 0).ToList();
-        var earlyDelays = delays.Where(d => d < 0).ToList();
-        var serviceDates = rows.Select(r => r.serviceDate).Distinct().OrderBy(d => d).ToList();
+        parms.Add(("@median_offset", (aggregate.CleanCount - 1) / 2));
+        parms.Add(("@median_take", aggregate.CleanCount % 2 == 0 ? 2 : 1));
+        var medianPage = IsSqlite
+            ? "LIMIT @median_take OFFSET @median_offset"
+            : "OFFSET @median_offset ROWS FETCH NEXT @median_take ROWS ONLY";
+        var medianSql = $@"
+            SELECT AVG(CAST(departure_delay AS FLOAT))
+            FROM (
+                SELECT o.departure_delay
+                {fromWhereSql}
+                  AND o.delay_source=2
+                  AND (o.realtime_state_id IS NULL OR o.realtime_state_id NOT IN (2, 3))
+                  AND o.departure_delay IS NOT NULL
+                  AND ABS(o.departure_delay)<={OutlierThreshold}
+                ORDER BY o.departure_delay
+                {medianPage}
+            ) AS median_rows";
+        var medianDelay = (await QueryRawAsync("summary median", medianSql, parms,
+            r => NullableDouble(r, 0), ct)).SingleOrDefault();
 
         return new Dictionary<string, object?>
         {
             ["period"] = new { start = startDate, end = endDate },
-            ["service_days"] = serviceDates.Count,
-            ["total_departures"] = total,
-            ["measured"] = measured.Count,
-            ["measured_pct"] = total > 0 ? Math.Round((double)measured.Count / total * 100, 1) : 0,
-            ["propagated"] = propagated,
-            ["canceled"] = canceled,
-            ["skipped"] = skipped,
-            ["static_only"] = staticOnly,
-            ["on_time"] = onTime,
-            ["on_time_pct"] = delays.Count > 0 ? Math.Round((double)onTime / delays.Count * 100, 1) : 0,
-            ["slightly_late"] = slightlyLate,
-            ["very_late"] = veryLate,
-            ["slightly_early"] = slightlyEarly,
-            ["very_early"] = veryEarly,
-            ["suspect_gps"] = outliers.Count,
-            ["avg_late_seconds"] = lateDelays.Count > 0 ? Math.Round(lateDelays.Average(), 1) : 0,
-            ["avg_early_seconds"] = earlyDelays.Count > 0 ? Math.Round(earlyDelays.Average(), 1) : 0,
-            ["median_delay_seconds"] = delays.Count > 0 ? Math.Round(Median(delays), 1) : 0,
-            ["max_late_seconds"] = delays.Count > 0 ? delays.Max() : 0,
-            ["max_early_seconds"] = delays.Count > 0 ? delays.Min() : 0,
+            ["service_days"] = aggregate.ServiceDays,
+            ["total_departures"] = aggregate.Total,
+            ["measured"] = aggregate.Measured,
+            ["measured_pct"] = Math.Round((double)aggregate.Measured / aggregate.Total * 100, 1),
+            ["propagated"] = aggregate.Propagated,
+            ["canceled"] = aggregate.Canceled,
+            ["skipped"] = aggregate.Skipped,
+            ["static_only"] = aggregate.StaticOnly,
+            ["on_time"] = aggregate.OnTime,
+            ["on_time_pct"] = aggregate.CleanCount > 0
+                ? Math.Round((double)aggregate.OnTime / aggregate.CleanCount * 100, 1) : 0,
+            ["slightly_late"] = aggregate.SlightlyLate,
+            ["very_late"] = aggregate.VeryLate,
+            ["slightly_early"] = aggregate.SlightlyEarly,
+            ["very_early"] = aggregate.VeryEarly,
+            ["suspect_gps"] = aggregate.SuspectGps,
+            ["avg_late_seconds"] = Math.Round(aggregate.AvgLate ?? 0, 1),
+            ["avg_early_seconds"] = Math.Round(aggregate.AvgEarly ?? 0, 1),
+            ["median_delay_seconds"] = Math.Round(medianDelay ?? 0, 1),
+            ["max_late_seconds"] = aggregate.MaxLate ?? 0,
+            ["max_early_seconds"] = aggregate.MaxEarly ?? 0,
         };
     }
 
@@ -148,60 +184,62 @@ public class AnalyzerService
     {
         var startParsed = TryParseDateToInt(startDate);
         var endParsed = TryParseDateToInt(endDate);
-        if (!startParsed.HasValue || !endParsed.HasValue) return new List<Dictionary<string, object?>>();
-        int start = startParsed.Value, end = endParsed.Value;
+        if (!startParsed.HasValue || !endParsed.HasValue) return [];
 
-        var sql = @"SELECT r.short_name, o.departure_delay, o.delay_source, rs.name AS realtime_state
-                    FROM observations o
-                    JOIN trips t ON o.trip_id=t.id
-                    JOIN stops s ON o.stop_id=s.id
-                    JOIN routes r ON t.route_id=r.id
-                    LEFT JOIN realtime_states rs ON o.realtime_state_id=rs.id
+        var sql = $@"SELECT r.short_name,
+                    COUNT(*) AS departures,
+                    SUM(CASE WHEN o.delay_source=2 THEN 1 ELSE 0 END) AS measured,
+                    SUM(CASE WHEN o.delay_source=2
+                                  AND (o.realtime_state_id IS NULL OR o.realtime_state_id NOT IN (2, 3))
+                                  AND ABS(o.departure_delay)<={OutlierThreshold}
+                                  AND o.departure_delay BETWEEN 0 AND 180 THEN 1 ELSE 0 END) AS on_time,
+                    SUM(CASE WHEN o.delay_source=2
+                                  AND (o.realtime_state_id IS NULL OR o.realtime_state_id NOT IN (2, 3))
+                                  AND ABS(o.departure_delay)<={OutlierThreshold} THEN 1 ELSE 0 END) AS clean_count,
+                    AVG(CASE WHEN o.delay_source=2
+                                  AND (o.realtime_state_id IS NULL OR o.realtime_state_id NOT IN (2, 3))
+                                  AND o.departure_delay>0 AND o.departure_delay<={OutlierThreshold}
+                             THEN CAST(o.departure_delay AS FLOAT) END) AS avg_late,
+                    AVG(CASE WHEN o.delay_source=2
+                                  AND (o.realtime_state_id IS NULL OR o.realtime_state_id NOT IN (2, 3))
+                                  AND o.departure_delay<0 AND o.departure_delay>=-{OutlierThreshold}
+                             THEN CAST(o.departure_delay AS FLOAT) END) AS avg_early,
+                    MAX(CASE WHEN o.delay_source=2
+                                  AND (o.realtime_state_id IS NULL OR o.realtime_state_id NOT IN (2, 3))
+                                  AND ABS(o.departure_delay)<={OutlierThreshold} THEN o.departure_delay END) AS max_late,
+                    MIN(CASE WHEN o.delay_source=2
+                                  AND (o.realtime_state_id IS NULL OR o.realtime_state_id NOT IN (2, 3))
+                                  AND ABS(o.departure_delay)<={OutlierThreshold} THEN o.departure_delay END) AS max_early,
+                    SUM(CASE WHEN o.delay_source=2
+                                  AND (o.realtime_state_id IS NULL OR o.realtime_state_id NOT IN (2, 3))
+                                  AND o.departure_delay IS NOT NULL
+                                  AND ABS(o.departure_delay)>{OutlierThreshold} THEN 1 ELSE 0 END) AS suspect_gps
+                    {BuildJoins(includeTrip: true, includeRoute: true)}
                     WHERE o.service_date>=@start AND o.service_date<=@end";
-        var parms = new List<(string, object?)> { ("@start", start), ("@end", end) };
+        var parms = NewDateParameters(startParsed.Value, endParsed.Value);
         AppendStopFilter(ref sql, parms, stopId, feedId);
         AppendFilters(ref sql, parms, route, timeFrom, timeTo, headsign);
         AppendPastOnlyFilter(ref sql, parms);
+        sql += " GROUP BY r.short_name ORDER BY r.short_name";
 
-        var raw = await QueryRawAsync(sql, parms, r => (
-            routeName: r.IsDBNull(0) ? "" : r.GetString(0),
-            delay: r.IsDBNull(1) ? (int?)null : r.GetInt32(1),
-            delaySource: r.GetInt32(2),
-            state: r.IsDBNull(3) ? null : r.GetString(3)
-        ), ct);
-
-        var byRoute = raw.GroupBy(r => r.routeName);
-        var result = new List<Dictionary<string, object?>>();
-
-        foreach (var grp in byRoute.OrderBy(g => g.Key))
+        return await QueryRawAsync("route breakdown", sql, parms, r =>
         {
-            var rr = grp.ToList();
-            int totalCount = rr.Count;
-            var measuredRows = rr.Where(r => r.delaySource == 2).ToList();
-            var allDelays = measuredRows
-                .Where(r => r.state != "CANCELED" && r.state != "SKIPPED")
-                .Where(r => r.delay.HasValue).Select(r => r.delay!.Value).ToList();
-            var clean = allDelays.Where(d => Math.Abs(d) <= OutlierThreshold).ToList();
-            int suspect = allDelays.Count - clean.Count;
-            var late = clean.Where(d => d > 0).ToList();
-            var early = clean.Where(d => d < 0).ToList();
-            int onTime = clean.Count(d => d >= 0 && d <= 180);
-            double onTimePct = clean.Count > 0 ? Math.Round((double)onTime / clean.Count * 100, 1) : 0;
-
-            result.Add(new Dictionary<string, object?>
+            var departures = Int(r, 1);
+            var cleanCount = Int(r, 4);
+            var onTime = Int(r, 3);
+            return new Dictionary<string, object?>
             {
-                ["route"] = grp.Key,
-                ["departures"] = totalCount,
-                ["measured"] = measuredRows.Count,
-                ["on_time_pct"] = onTimePct,
-                ["avg_late_seconds"] = late.Count > 0 ? Math.Round(late.Average(), 1) : 0,
-                ["avg_early_seconds"] = early.Count > 0 ? Math.Round(early.Average(), 1) : 0,
-                ["max_late_seconds"] = clean.Count > 0 ? clean.Max() : 0,
-                ["max_early_seconds"] = clean.Count > 0 ? clean.Min() : 0,
-                ["suspect_gps"] = suspect,
-            });
-        }
-        return result;
+                ["route"] = r.IsDBNull(0) ? "" : r.GetString(0),
+                ["departures"] = departures,
+                ["measured"] = Int(r, 2),
+                ["on_time_pct"] = cleanCount > 0 ? Math.Round((double)onTime / cleanCount * 100, 1) : 0,
+                ["avg_late_seconds"] = Math.Round(NullableDouble(r, 5) ?? 0, 1),
+                ["avg_early_seconds"] = Math.Round(NullableDouble(r, 6) ?? 0, 1),
+                ["max_late_seconds"] = NullableInt(r, 7) ?? 0,
+                ["max_early_seconds"] = NullableInt(r, 8) ?? 0,
+                ["suspect_gps"] = Int(r, 9),
+            };
+        }, ct);
     }
 
     public async Task<List<Dictionary<string, object?>>> GetDelayByHourAsync(string? stopId,
@@ -211,56 +249,55 @@ public class AnalyzerService
     {
         var startParsed = TryParseDateToInt(startDate);
         var endParsed = TryParseDateToInt(endDate);
-        if (!startParsed.HasValue || !endParsed.HasValue) return new List<Dictionary<string, object?>>();
-        int start = startParsed.Value, end = endParsed.Value;
+        if (!startParsed.HasValue || !endParsed.HasValue) return [];
 
-        var sql = @"SELECT (o.scheduled_departure / 3600) AS hour, o.departure_delay, o.delay_source, rs.name AS realtime_state
-                    FROM observations o
-                    JOIN trips t ON o.trip_id=t.id
-                    JOIN stops s ON o.stop_id=s.id
-                    JOIN routes r ON t.route_id=r.id
-                    LEFT JOIN realtime_states rs ON o.realtime_state_id=rs.id
+        var sql = $@"SELECT (o.scheduled_departure / 3600) AS hour,
+                    COUNT(*) AS departures,
+                    SUM(CASE WHEN o.delay_source=2 THEN 1 ELSE 0 END) AS measured,
+                    AVG(CASE WHEN o.delay_source=2
+                                  AND (o.realtime_state_id IS NULL OR o.realtime_state_id NOT IN (2, 3))
+                                  AND ABS(o.departure_delay)<={OutlierThreshold}
+                             THEN CAST(o.departure_delay AS FLOAT) END) AS avg_delay,
+                    AVG(CASE WHEN o.delay_source=2
+                                  AND (o.realtime_state_id IS NULL OR o.realtime_state_id NOT IN (2, 3))
+                                  AND o.departure_delay>0 AND o.departure_delay<={OutlierThreshold}
+                             THEN CAST(o.departure_delay AS FLOAT) END) AS avg_late,
+                    AVG(CASE WHEN o.delay_source=2
+                                  AND (o.realtime_state_id IS NULL OR o.realtime_state_id NOT IN (2, 3))
+                                  AND o.departure_delay<0 AND o.departure_delay>=-{OutlierThreshold}
+                             THEN CAST(o.departure_delay AS FLOAT) END) AS avg_early
+                    {BuildJoins(includeTrip: NeedsTrip(route, headsign), includeRoute: !string.IsNullOrEmpty(route))}
                     WHERE o.service_date>=@start AND o.service_date<=@end";
-        var parms = new List<(string, object?)> { ("@start", start), ("@end", end) };
+        var parms = NewDateParameters(startParsed.Value, endParsed.Value);
         AppendStopFilter(ref sql, parms, stopId, feedId);
         AppendFilters(ref sql, parms, route, timeFrom, timeTo, headsign);
         AppendPastOnlyFilter(ref sql, parms);
+        sql += " GROUP BY (o.scheduled_departure / 3600) ORDER BY (o.scheduled_departure / 3600)";
 
-        var raw = await QueryRawAsync(sql, parms, r => (
-            hour: r.GetInt32(0),
-            delay: r.IsDBNull(1) ? (int?)null : r.GetInt32(1),
-            delaySource: r.GetInt32(2),
-            state: r.IsDBNull(3) ? null : r.GetString(3)
-        ), ct);
-
-        var result = new List<Dictionary<string, object?>>();
-        foreach (var grp in raw.GroupBy(r => r.hour).OrderBy(g => g.Key))
+        return await QueryRawAsync("delay by hour", sql, parms, r => new Dictionary<string, object?>
         {
-            var rr = grp.ToList();
-            var measuredRows = rr.Where(r => r.delaySource == 2).ToList();
-            var allDelays = measuredRows
-                .Where(r => r.state != "CANCELED" && r.state != "SKIPPED")
-                .Where(r => r.delay.HasValue).Select(r => r.delay!.Value).ToList();
-            var clean = allDelays.Where(d => Math.Abs(d) <= OutlierThreshold).ToList();
-            var late = clean.Where(d => d > 0).ToList();
-            var early = clean.Where(d => d < 0).ToList();
-
-            result.Add(new Dictionary<string, object?>
-            {
-                ["hour"] = grp.Key,
-                ["departures"] = rr.Count,
-                ["measured"] = measuredRows.Count,
-                ["avg_late_seconds"] = late.Count > 0 ? Math.Round(late.Average(), 1) : 0,
-                ["avg_early_seconds"] = early.Count > 0 ? Math.Round(early.Average(), 1) : 0,
-                ["avg_delay_seconds"] = clean.Count > 0 ? Math.Round(clean.Average(), 1) : 0,
-            });
-        }
-        return result;
+            ["hour"] = Int(r, 0),
+            ["departures"] = Int(r, 1),
+            ["measured"] = Int(r, 2),
+            ["avg_late_seconds"] = Math.Round(NullableDouble(r, 4) ?? 0, 1),
+            ["avg_early_seconds"] = Math.Round(NullableDouble(r, 5) ?? 0, 1),
+            ["avg_delay_seconds"] = Math.Round(NullableDouble(r, 3) ?? 0, 1),
+        }, ct);
     }
 
-    // -----------------------------------------------------------------------
-    // Helpers
-    // -----------------------------------------------------------------------
+    private static string BuildJoins(bool includeTrip, bool includeRoute)
+    {
+        var sql = "FROM observations o JOIN stops s ON o.stop_id=s.id";
+        if (includeTrip || includeRoute) sql += " JOIN trips t ON o.trip_id=t.id";
+        if (includeRoute) sql += " JOIN routes r ON t.route_id=r.id";
+        return sql;
+    }
+
+    private static bool NeedsTrip(string? route, string? headsign) =>
+        !string.IsNullOrEmpty(route) || !string.IsNullOrEmpty(headsign);
+
+    private static List<(string Name, object? Value)> NewDateParameters(int start, int end) =>
+        [("@start", start), ("@end", end)];
 
     private static void AppendStopFilter(ref string sql, List<(string Name, object? Value)> parms,
         string? stopId, string? feedId)
@@ -288,10 +325,11 @@ public class AnalyzerService
         parms.Add(("@now_secs", nowSecs));
     }
 
-    private async Task<List<T>> QueryRawAsync<T>(string sql,
+    private async Task<List<T>> QueryRawAsync<T>(string operation, string sql,
         List<(string Name, object? Value)> parms, Func<DbDataReader, T> mapper,
         CancellationToken ct = default)
     {
+        var stopwatch = Stopwatch.StartNew();
         var conn = _context.Database.GetDbConnection();
         bool wasOpen = conn.State == ConnectionState.Open;
         if (!wasOpen) await conn.OpenAsync(ct);
@@ -308,8 +346,9 @@ public class AnalyzerService
             }
             using var reader = await cmd.ExecuteReaderAsync(ct);
             var result = new List<T>();
-            while (await reader.ReadAsync(ct))
-                result.Add(mapper(reader));
+            while (await reader.ReadAsync(ct)) result.Add(mapper(reader));
+            _logger.LogInformation("Database report query {Operation} completed in {ElapsedMs} ms with {RowCount} result rows",
+                operation, stopwatch.ElapsedMilliseconds, result.Count);
             return result;
         }
         finally
@@ -318,10 +357,18 @@ public class AnalyzerService
         }
     }
 
-    private static double Median(List<int> values)
-    {
-        var sorted = values.OrderBy(v => v).ToList();
-        int mid = sorted.Count / 2;
-        return sorted.Count % 2 == 0 ? (sorted[mid - 1] + sorted[mid]) / 2.0 : sorted[mid];
-    }
+    private static int Int(DbDataReader reader, int ordinal) =>
+        reader.IsDBNull(ordinal) ? 0 : Convert.ToInt32(reader.GetValue(ordinal));
+
+    private static int? NullableInt(DbDataReader reader, int ordinal) =>
+        reader.IsDBNull(ordinal) ? null : Convert.ToInt32(reader.GetValue(ordinal));
+
+    private static double? NullableDouble(DbDataReader reader, int ordinal) =>
+        reader.IsDBNull(ordinal) ? null : Convert.ToDouble(reader.GetValue(ordinal));
+
+    private sealed record SummaryAggregate(
+        int Total, int ServiceDays, int Measured, int Propagated, int StaticOnly,
+        int Canceled, int Skipped, int SuspectGps, int OnTime, int SlightlyLate,
+        int VeryLate, int SlightlyEarly, int VeryEarly, int CleanCount,
+        double? AvgLate, double? AvgEarly, int? MaxLate, int? MaxEarly);
 }

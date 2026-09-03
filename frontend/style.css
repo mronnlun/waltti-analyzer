@@ -163,14 +163,55 @@ h2 {
 }
 
 .filter-status {
-    display: flex;
+    display: none;
     align-items: center;
-    min-height: 1.4rem;
+    justify-content: center;
+    gap: 0.65rem;
+    min-height: 3rem;
+    padding: 0.7rem 1rem;
+    border: 1px solid #a9cce3;
+    border-radius: 6px;
+    background: #eaf4fb;
+}
+
+.filter-status.is-visible {
+    display: flex;
+}
+
+.filter-status.is-loading::before {
+    content: "🚌";
+    width: 2.8rem;
+    flex-shrink: 0;
+    font-size: 1.35rem;
+    line-height: 1;
+    text-align: center;
+    animation: bus-shuttle 1.2s ease-in-out infinite alternate;
+}
+
+.filter-status.is-error {
+    border-color: #e6b0aa;
+    background: #fdedec;
+}
+
+@keyframes bus-shuttle {
+    from { transform: translateX(-0.55rem); }
+    to { transform: translateX(0.55rem); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .filter-status.is-loading::before {
+        animation: none;
+    }
 }
 
 #action-status {
-    font-size: 0.85rem;
-    color: #7f8c8d;
+    font-size: 1.05rem;
+    font-weight: 600;
+    color: #1f4e6b;
+}
+
+.filter-status.is-error #action-status {
+    color: #922b21;
 }
 
 .filter-clear-btn {

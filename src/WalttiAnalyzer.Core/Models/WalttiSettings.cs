@@ -7,4 +7,5 @@ public class WalttiSettings
     public string DigitransitApiUrl { get; set; } = "https://api.digitransit.fi/routing/v2/waltti/gtfs/v1";
     public string DigitransitApiKey { get; set; } = "";
     public string DefaultStopId { get; set; } = "Vaasa:309392";
+    public bool SyncEnabled { get; set; } = true;
 }
